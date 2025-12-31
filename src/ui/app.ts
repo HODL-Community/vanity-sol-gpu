@@ -74,7 +74,7 @@ export function initApp(root: HTMLDivElement) {
           <line x1="12" y1="12" x2="22" y2="12"/>
         </svg>
       </div>
-      <div class="title">Vanity ETH</div>
+      <div class="title">Vanity ETH GPU</div>
       <div class="subtitle" id="subtitle">GPU-accelerated address generator</div>
     </div>
 
