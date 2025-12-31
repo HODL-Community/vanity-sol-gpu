@@ -143,6 +143,7 @@ export function initApp(root: HTMLDivElement) {
 
     <div class="footer">
       <div>All computations run locally in your browser. For maximum security, disconnect from the internet before generating.</div>
+      <div class="open-source"><a href="https://github.com/HODL-Community/vanity-eth-gpu" target="_blank" rel="noopener">Open Source</a> on GitHub</div>
       <div class="donate">Donate: <span class="donate-addr">0x99999933F17A1339958d50b3f59740E5Ad48C74C</span></div>
     </div>
   `
