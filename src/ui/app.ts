@@ -75,7 +75,7 @@ export function initApp(root: HTMLDivElement) {
         </svg>
       </div>
       <div class="title">Vanity ETH</div>
-      <div class="subtitle">GPU-accelerated address generator</div>
+      <div class="subtitle" id="subtitle">GPU-accelerated address generator</div>
     </div>
 
     <div class="panel">
@@ -164,6 +164,7 @@ export function initApp(root: HTMLDivElement) {
   const copyPk = root.querySelector<HTMLButtonElement>('#copy-pk')!
   const btnReveal = root.querySelector<HTMLButtonElement>('#btn-reveal')!
   const btnDownload = root.querySelector<HTMLButtonElement>('#btn-download')!
+  const subtitleEl = root.querySelector<HTMLDivElement>('#subtitle')!
 
   // State
   let runState: RunState = { status: 'idle' }
@@ -259,7 +260,8 @@ export function initApp(root: HTMLDivElement) {
     let recentStartMs = nowMs()
 
     if (gpu) {
-      // Full GPU path - much larger batches since everything runs on GPU
+      // Full GPU path - secp256k1 + Keccak entirely on GPU
+      subtitleEl.textContent = 'Running on GPU (full secp256k1)'
       const batchSize = 4096
 
       while (!stopRequested) {
@@ -295,6 +297,7 @@ export function initApp(root: HTMLDivElement) {
     } else {
       // CPU worker fallback
       const pool = createWorkerPool()
+      subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
       const batchPerWorker = 512
 
       while (!stopRequested) {
@@ -336,6 +339,7 @@ export function initApp(root: HTMLDivElement) {
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
+      subtitleEl.textContent = 'GPU-accelerated address generator'
       runState = { status: 'idle' }
     }
   }
