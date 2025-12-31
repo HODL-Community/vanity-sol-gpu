@@ -144,7 +144,7 @@ export function initApp(root: HTMLDivElement) {
       <div>All computations run locally in your browser. For maximum security, disconnect from the internet before generating.</div>
       <div class="built-by">Built by <a href="https://x.com/snapss" target="_blank" rel="noopener">@snapss</a> & <a href="https://claude.ai" target="_blank" rel="noopener">Claude</a></div>
       <div class="open-source"><a href="https://github.com/HODL-Community/vanity-eth-gpu" target="_blank" rel="noopener">Open Source</a> on GitHub</div>
-      <div class="donate">Donate: <span class="donate-addr">0x99999933F17A1339958d50b3f59740E5Ad48C74C</span></div>
+      <div class="donate">Donate: <span class="donate-addr">0x99999933F17A1339958d50b3f59740E5Ad48C74C</span><button class="copy-btn-small" id="copy-donate">Copy</button></div>
     </div>
   `
 
@@ -386,6 +386,11 @@ export function initApp(root: HTMLDivElement) {
     a.download = `${lastFound.address}.json`
     a.click()
     URL.revokeObjectURL(a.href)
+  })
+
+  const copyDonate = root.querySelector<HTMLButtonElement>('#copy-donate')!
+  copyDonate.addEventListener('click', () => {
+    void copyToClipboard('0x99999933F17A1339958d50b3f59740E5Ad48C74C', copyDonate)
   })
 
   // Initialize

@@ -421,18 +421,38 @@ input:focus {
 
 .donate {
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .donate-addr {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
-  user-select: all;
-  cursor: pointer;
 }
 
-.donate-addr:hover {
-  color: var(--accent);
+.copy-btn-small {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.copy-btn-small:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.copy-btn-small.copied {
+  color: var(--success);
+  border-color: var(--success);
 }
 
 /* Pulse animation */
