@@ -67,9 +67,14 @@ export async function createGpuVanity(): Promise<GpuVanity> {
   ): Promise<GpuVanityResult | null> {
     if (destroyed) throw new Error('GPU vanity destroyed')
 
-    // Generate random seeds on CPU
+    // Generate random seeds on CPU (max 65536 bytes per call)
     const seedData = new Uint32Array(batchSize * 8)
-    crypto.getRandomValues(seedData)
+    const maxBytes = 65536
+    const maxU32s = maxBytes / 4
+    for (let offset = 0; offset < seedData.length; offset += maxU32s) {
+      const chunk = seedData.subarray(offset, Math.min(offset + maxU32s, seedData.length))
+      crypto.getRandomValues(chunk)
+    }
 
     const seedBuffer = device.createBuffer({
       size: seedData.byteLength,
