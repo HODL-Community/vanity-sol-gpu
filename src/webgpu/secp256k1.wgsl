@@ -38,6 +38,8 @@ var<private> gz: array<u32, 8>;
 var<private> tmp1: array<u32, 8>;
 var<private> tmp2: array<u32, 8>;
 var<private> tmp3: array<u32, 8>;
+var<private> inv_result: array<u32, 8>;
+var<private> inv_base: array<u32, 8>;
 var<private> state: array<u32, 50>;
 
 fn is_zero_8(a: ptr<private, array<u32, 8>>) -> bool {
@@ -197,10 +199,8 @@ fn mod_sqr(a: ptr<private, array<u32, 8>>, c: ptr<private, array<u32, 8>>) {
 // Modular inverse via Fermat: a^(p-2) mod p
 fn mod_inv(a: ptr<private, array<u32, 8>>, c: ptr<private, array<u32, 8>>) {
   // p-2 = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2D
-  var result: array<u32, 8>;
-  var base: array<u32, 8>;
-  set_one(&result);
-  copy_8(a, &base);
+  set_one(&inv_result);
+  copy_8(a, &inv_base);
 
   // Exponent bits (p-2)
   let exp = array<u32, 8>(0xFFFFFC2Du, 0xFFFFFFFEu, 0xFFFFFFFFu, 0xFFFFFFFFu,
@@ -210,13 +210,13 @@ fn mod_inv(a: ptr<private, array<u32, 8>>, c: ptr<private, array<u32, 8>>) {
     let limb = i / 32u;
     let bit = i % 32u;
     if ((exp[limb] & (1u << bit)) != 0u) {
-      mod_mul(&result, &base, &tmp1);
-      copy_8(&tmp1, &result);
+      mod_mul(&inv_result, &inv_base, &tmp1);
+      copy_8(&tmp1, &inv_result);
     }
-    mod_sqr(&base, &tmp1);
-    copy_8(&tmp1, &base);
+    mod_sqr(&inv_base, &tmp1);
+    copy_8(&tmp1, &inv_base);
   }
-  copy_8(&result, c);
+  copy_8(&inv_result, c);
 }
 
 fn init_G() {
