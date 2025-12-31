@@ -285,7 +285,29 @@ export function initApp(root: HTMLDivElement) {
 
           if (result) {
             const foundAddress = checksumAddress('0x' + result.addressHex)
-            handleFound(result.privHex, foundAddress, pre, suf)
+            // GPU already validated the match, directly mark as found
+            const priv = hexToBytes(result.privHex) as PrivKey32
+            const timeS = (nowMs() - startedAtMs) / 1000
+            const generated: number = runState.status === 'running' ? runState.generated : 0
+
+            runState = { status: 'found', generated, time: timeS, foundPriv: priv, foundAddress }
+            lastFound = { priv, address: foundAddress }
+
+            const preMatch = foundAddress.slice(2, 2 + pre.length)
+            const sufMatch = foundAddress.slice(2 + 40 - suf.length)
+            const midPart = foundAddress.slice(2 + pre.length, 2 + 40 - suf.length)
+
+            addrText.innerHTML = `0x<span class="highlight">${preMatch}</span>${midPart}<span class="highlight">${sufMatch}</span>`
+            pkText.textContent = '\u2022'.repeat(64)
+
+            resultEl.classList.add('visible', 'found')
+            btnGenerate.textContent = 'Generate'
+            btnGenerate.classList.remove('running')
+            previewEl.classList.remove('generating')
+            subtitleEl.textContent = 'GPU-accelerated address generator'
+            updateStats()
+
+            stopRequested = true
           }
         } catch (e) {
           console.error('GPU error:', e)
