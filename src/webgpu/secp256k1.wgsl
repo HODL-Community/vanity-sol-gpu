@@ -417,10 +417,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var ay: array<u32, 8>;
   to_affine(&ax, &ay);
 
+  // Pack pubkey in big-endian format (Ethereum requires big-endian)
+  // ax/ay are in little-endian limb order, need to reverse both limb and byte order
   var pubkey: array<u32, 16>;
   for (var i: u32 = 0u; i < 8u; i = i + 1u) {
-    pubkey[i] = ax[i];
-    pubkey[8u + i] = ay[i];
+    // Reverse limb order (7-i) and byte swap within each u32
+    let vx = ax[7u - i];
+    let vy = ay[7u - i];
+    // Byte swap: ABCD -> DCBA
+    pubkey[i] = ((vx & 0xFFu) << 24u) | ((vx & 0xFF00u) << 8u) | ((vx >> 8u) & 0xFF00u) | ((vx >> 24u) & 0xFFu);
+    pubkey[8u + i] = ((vy & 0xFFu) << 24u) | ((vy & 0xFF00u) << 8u) | ((vy >> 8u) & 0xFF00u) | ((vy >> 24u) & 0xFFu);
   }
 
   keccak256(&pubkey);
