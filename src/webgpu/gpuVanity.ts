@@ -10,7 +10,8 @@ export type GpuVanity = {
   destroy(): void
 }
 
-function u32ArrayToHex(arr: Uint32Array, start: number, count: number): string {
+// Little-endian u32 array to hex (for hash output)
+function u32ArrayToHexLE(arr: Uint32Array, start: number, count: number): string {
   let hex = ''
   for (let i = 0; i < count; i++) {
     const val = arr[start + i]
@@ -18,6 +19,20 @@ function u32ArrayToHex(arr: Uint32Array, start: number, count: number): string {
     hex += ((val >> 8) & 0xff).toString(16).padStart(2, '0')
     hex += ((val >> 16) & 0xff).toString(16).padStart(2, '0')
     hex += ((val >> 24) & 0xff).toString(16).padStart(2, '0')
+  }
+  return hex
+}
+
+// Little-endian limbs to big-endian hex (for private key)
+function u32ArrayToHexBE(arr: Uint32Array, start: number, count: number): string {
+  let hex = ''
+  // Reverse limb order and byte order
+  for (let i = count - 1; i >= 0; i--) {
+    const val = arr[start + i]
+    hex += ((val >> 24) & 0xff).toString(16).padStart(2, '0')
+    hex += ((val >> 16) & 0xff).toString(16).padStart(2, '0')
+    hex += ((val >> 8) & 0xff).toString(16).padStart(2, '0')
+    hex += (val & 0xff).toString(16).padStart(2, '0')
   }
   return hex
 }
@@ -139,8 +154,8 @@ export async function createGpuVanity(): Promise<GpuVanity> {
     const count = resultData[0]
     if (count > 0) {
       const base = 1
-      const privHex = u32ArrayToHex(resultData, base, 8)
-      const hashHex = u32ArrayToHex(resultData, base + 8, 8)
+      const privHex = u32ArrayToHexBE(resultData, base, 8)  // Big-endian for wallet import
+      const hashHex = u32ArrayToHexLE(resultData, base + 8, 8)
       const addressHex = hashHex.slice(24)
       return { privHex, addressHex }
     }
