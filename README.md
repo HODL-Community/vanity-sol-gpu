@@ -1,10 +1,10 @@
 # Vanity ETH GPU
 
-A GPU-accelerated Ethereum vanity address generator that runs entirely in your browser.
+A fast Ethereum vanity address generator that runs entirely in your browser.
 
 ## Features
 
-- **Full GPU Acceleration** - secp256k1 + Keccak-256 computed entirely on GPU via WebGPU
+- **Multi-threaded** - Uses Web Workers for parallel address generation
 - **Privacy First** - All computations run locally in your browser, no server communication
 - **Custom Prefix/Suffix** - Find addresses starting or ending with your desired characters
 - **Case Sensitive** - Optional EIP-55 checksum matching
@@ -12,8 +12,7 @@ A GPU-accelerated Ethereum vanity address generator that runs entirely in your b
 
 ## Requirements
 
-- A modern browser with WebGPU support (Chrome 113+, Edge 113+, or Firefox Nightly)
-- A dedicated GPU is recommended for best performance
+- A modern browser (Chrome, Firefox, Edge, Safari)
 
 ## Usage
 
@@ -45,8 +44,8 @@ npm run build
 
 - TypeScript
 - Vite
-- WebGPU / WGSL
-- Web Workers (CPU fallback)
+- Web Workers
+- @noble/secp256k1 for cryptography
 
 ## License
 

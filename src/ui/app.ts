@@ -1,10 +1,8 @@
-import { bytesToHex, hexToBytes, hexToNibbles, nowMs } from '../utils/hex'
+import { bytesToHex, hexToBytes, nowMs } from '../utils/hex'
 import { createKeystoreV3, type KeystoreV3 } from '../wallet/keystoreV3'
-import { checksumAddress, pubkeyToAddressBytes } from '../wallet/ethAddress'
+import { checksumAddress } from '../wallet/ethAddress'
 import { type PrivKey32 } from '../wallet/keys'
 import { createWorkerPool } from '../worker/pool'
-import { createGpuVanity, type GpuVanity } from '../webgpu/gpuVanity'
-import * as secp from '@noble/secp256k1'
 
 type RunState =
   | { status: 'idle' }
@@ -76,7 +74,7 @@ export function initApp(root: HTMLDivElement) {
         </svg>
       </div>
       <div class="title">Vanity ETH GPU</div>
-      <div class="subtitle" id="subtitle">GPU-accelerated address generator</div>
+      <div class="subtitle" id="subtitle">Fast vanity address generator</div>
     </div>
 
     <div class="panel">
@@ -238,8 +236,6 @@ export function initApp(root: HTMLDivElement) {
     const suf = sanitizeHex(suffixInput.value)
     const preLower = pre.toLowerCase()
     const sufLower = suf.toLowerCase()
-    const prefixNibbles = hexToNibbles(preLower)
-    const suffixNibbles = hexToNibbles(sufLower)
 
     if (pre.length + suf.length === 0) {
       btnGenerate.textContent = 'Generate'
@@ -248,134 +244,56 @@ export function initApp(root: HTMLDivElement) {
       return
     }
 
-    // Try GPU first
-    let gpu: GpuVanity | null = null
-    try {
-      gpu = await createGpuVanity()
-    } catch (e) {
-      console.log('GPU not available, using CPU workers:', e)
-    }
-
     const startedAtMs = nowMs()
     runState = { status: 'running', startedAtMs, generated: 0, speed: 0 }
 
     let recentGenerated = 0
     let recentStartMs = nowMs()
 
-    if (gpu) {
-      // Full GPU path - secp256k1 + Keccak entirely on GPU
-      subtitleEl.textContent = 'Running on GPU (full secp256k1)'
-      const batchSize = 16384
+    // CPU workers using @noble libraries
+    const pool = createWorkerPool()
+    subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
+    const batchPerWorker = 512
 
-      while (!stopRequested) {
-        try {
-          const result = await gpu.search(prefixNibbles, suffixNibbles, batchSize)
+    while (!stopRequested) {
+      const promises = []
+      for (let i = 0; i < pool.workerCount; i++) {
+        promises.push(pool.search(preLower, sufLower, batchPerWorker))
+      }
 
-          if (runState.status === 'running') {
-            runState = { ...runState, generated: runState.generated + batchSize }
-          }
-          recentGenerated += batchSize
+      const results = await Promise.all(promises)
+      let totalChecked = 0
 
-          // Update stats periodically
-          const elapsed = nowMs() - recentStartMs
-          if (elapsed >= 500 && runState.status === 'running') {
-            const speed = Math.floor(recentGenerated / (elapsed / 1000))
-            runState = { ...runState, speed }
-            recentGenerated = 0
-            recentStartMs = nowMs()
-            updateStats()
-          }
-
-          if (result) {
-            // Verify GPU result with CPU - derive address from private key
-            const priv = hexToBytes(result.privHex) as PrivKey32
-            const pub65 = secp.getPublicKey(priv, false)
-            const pub64 = pub65.slice(1)
-            const addrBytes = pubkeyToAddressBytes(pub64)
-            const foundAddress = checksumAddress('0x' + bytesToHex(addrBytes))
-
-            // Check if CPU-verified address actually matches prefix/suffix
-            const addrLower = foundAddress.slice(2).toLowerCase()
-            if (!addrLower.startsWith(preLower) || !addrLower.endsWith(sufLower)) {
-              // GPU gave false positive, keep searching
-              continue
-            }
-
-            const timeS = (nowMs() - startedAtMs) / 1000
-            const generated: number = runState.status === 'running' ? runState.generated : 0
-
-            runState = { status: 'found', generated, time: timeS, foundPriv: priv, foundAddress }
-            lastFound = { priv, address: foundAddress }
-
-            const preMatch = foundAddress.slice(2, 2 + pre.length)
-            const sufMatch = foundAddress.slice(2 + 40 - suf.length)
-            const midPart = foundAddress.slice(2 + pre.length, 2 + 40 - suf.length)
-
-            addrText.innerHTML = `0x<span class="highlight">${preMatch}</span>${midPart}<span class="highlight">${sufMatch}</span>`
-            pkText.textContent = '\u2022'.repeat(64)
-
-            resultEl.classList.add('visible', 'found')
-            btnGenerate.textContent = 'Generate'
-            btnGenerate.classList.remove('running')
-            previewEl.classList.remove('generating')
-            subtitleEl.textContent = 'GPU-accelerated address generator'
-            updateStats()
-
-            stopRequested = true
-          }
-        } catch (e) {
-          console.error('GPU error:', e)
-          break
+      for (const r of results) {
+        totalChecked += r.checked
+        if (r.found && runState.status === 'running') {
+          const foundAddress = checksumAddress(r.found.address)
+          handleFound(r.found.privHex, foundAddress, pre, suf)
         }
       }
 
-      gpu.destroy()
-    } else {
-      // CPU worker fallback
-      const pool = createWorkerPool()
-      subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
-      const batchPerWorker = 512
-
-      while (!stopRequested) {
-        const promises = []
-        for (let i = 0; i < pool.workerCount; i++) {
-          promises.push(pool.search(preLower, sufLower, batchPerWorker))
-        }
-
-        const results = await Promise.all(promises)
-        let totalChecked = 0
-
-        for (const r of results) {
-          totalChecked += r.checked
-          if (r.found && runState.status === 'running') {
-            const foundAddress = checksumAddress(r.found.address)
-            handleFound(r.found.privHex, foundAddress, pre, suf)
-          }
-        }
-
-        if (runState.status === 'running') {
-          runState = { ...runState, generated: runState.generated + totalChecked }
-        }
-        recentGenerated += totalChecked
-
-        const elapsed = nowMs() - recentStartMs
-        if (elapsed >= 500 && runState.status === 'running') {
-          const speed = Math.floor(recentGenerated / (elapsed / 1000))
-          runState = { ...runState, speed }
-          recentGenerated = 0
-          recentStartMs = nowMs()
-          updateStats()
-        }
+      if (runState.status === 'running') {
+        runState = { ...runState, generated: runState.generated + totalChecked }
       }
+      recentGenerated += totalChecked
 
-      pool.destroy()
+      const elapsed = nowMs() - recentStartMs
+      if (elapsed >= 500 && runState.status === 'running') {
+        const speed = Math.floor(recentGenerated / (elapsed / 1000))
+        runState = { ...runState, speed }
+        recentGenerated = 0
+        recentStartMs = nowMs()
+        updateStats()
+      }
     }
+
+    pool.destroy()
 
     if (!stopRequested || runState.status === 'running') {
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
-      subtitleEl.textContent = 'GPU-accelerated address generator'
+      subtitleEl.textContent = 'Fast vanity address generator'
       runState = { status: 'idle' }
     }
   }
