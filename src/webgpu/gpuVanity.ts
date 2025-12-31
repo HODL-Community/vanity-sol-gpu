@@ -31,7 +31,21 @@ export async function createGpuVanity(): Promise<GpuVanity> {
 
   const device = await adapter.requestDevice()
 
+  // Log any GPU errors
+  device.onuncapturederror = (e) => {
+    console.error('WebGPU error:', e.error)
+  }
+
   const module = device.createShaderModule({ code: shaderSource })
+
+  // Check for shader compilation errors
+  const compilationInfo = await module.getCompilationInfo()
+  for (const msg of compilationInfo.messages) {
+    console.log(`Shader ${msg.type}: ${msg.message} at line ${msg.lineNum}`)
+  }
+  if (compilationInfo.messages.some(m => m.type === 'error')) {
+    throw new Error('Shader compilation failed')
+  }
 
   const pipeline = device.createComputePipeline({
     layout: 'auto',
@@ -125,6 +139,7 @@ export async function createGpuVanity(): Promise<GpuVanity> {
     seedBuffer.destroy()
 
     const count = resultData[0]
+    console.log('GPU result count:', count, 'first few results:', resultData.slice(0, 20))
     if (count > 0) {
       // Extract first result
       const base = 1
