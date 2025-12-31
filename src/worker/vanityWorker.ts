@@ -1,6 +1,19 @@
 import { Point, utils, getPublicKey } from '@noble/secp256k1'
 import { keccak_256 } from '@noble/hashes/sha3.js'
 
+/**
+ * SECURITY MODEL:
+ * - Randomness: Uses crypto.getRandomValues() (OS-level CSPRNG) via @noble/secp256k1
+ * - Key Generation: FIPS 186 B.4.1 compliant with modulo bias elimination
+ * - Incremental Search: Each batch starts from a fresh 256-bit random key
+ * - Verification: Found keys are re-verified before returning to prevent any bugs
+ *
+ * The incremental approach (k, k+1, k+2...) is safe because:
+ * 1. ECDLP: Cannot derive private key from public key/address
+ * 2. Only ONE key per batch is ever returned to user
+ * 3. Each batch has independent random starting point
+ */
+
 type WorkerMessage = {
   type: 'search'
   id: number
@@ -39,12 +52,22 @@ function bigIntToHex(n: bigint): string {
   return n.toString(16).padStart(64, '0')
 }
 
+function bigIntToBytes(n: bigint): Uint8Array {
+  const bytes = new Uint8Array(32)
+  let temp = n
+  for (let i = 31; i >= 0; i--) {
+    bytes[i] = Number(temp & 0xffn)
+    temp >>= 8n
+  }
+  return bytes
+}
+
 self.onmessage = (e: MessageEvent<WorkerMessage>) => {
   const { type, id, batchSize, prefixLower, suffixLower } = e.data
 
   if (type !== 'search') return
 
-  // Generate random starting private key
+  // Generate random starting private key using CSPRNG
   const privBytes = utils.randomSecretKey()
   let privKey = bytesToBigInt(privBytes)
 
@@ -58,6 +81,17 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
     const addr = pubkeyToAddress(pub64)
 
     if (addr.startsWith(prefixLower) && addr.endsWith(suffixLower)) {
+      // SECURITY: Re-verify the key before returning
+      // Recompute public key from private key to ensure correctness
+      const verifyPub = getPublicKey(bigIntToBytes(privKey), false)
+      const verifyAddr = pubkeyToAddress(verifyPub.slice(1))
+
+      if (verifyAddr !== addr) {
+        // Should never happen - indicates a bug
+        console.error('Key verification failed!')
+        continue
+      }
+
       const result: WorkerResult = {
         type: 'result',
         id,
