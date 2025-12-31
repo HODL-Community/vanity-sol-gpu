@@ -40,6 +40,33 @@ var<private> tmp2: array<u32, 8>;
 var<private> tmp3: array<u32, 8>;
 var<private> inv_result: array<u32, 8>;
 var<private> inv_base: array<u32, 8>;
+// Point doubling temps
+var<private> pd_xx: array<u32, 8>;
+var<private> pd_yy: array<u32, 8>;
+var<private> pd_yyyy: array<u32, 8>;
+var<private> pd_s: array<u32, 8>;
+var<private> pd_m: array<u32, 8>;
+// Point addition temps
+var<private> pa_z1z1: array<u32, 8>;
+var<private> pa_z2z2: array<u32, 8>;
+var<private> pa_u1: array<u32, 8>;
+var<private> pa_u2: array<u32, 8>;
+var<private> pa_s1: array<u32, 8>;
+var<private> pa_s2: array<u32, 8>;
+var<private> pa_h: array<u32, 8>;
+var<private> pa_r: array<u32, 8>;
+var<private> pa_hh: array<u32, 8>;
+var<private> pa_hhh: array<u32, 8>;
+var<private> pa_u1hh: array<u32, 8>;
+// Affine conversion temps
+var<private> af_zinv: array<u32, 8>;
+var<private> af_zinv2: array<u32, 8>;
+var<private> af_zinv3: array<u32, 8>;
+// Main function temps
+var<private> m_privkey: array<u32, 8>;
+var<private> m_ax: array<u32, 8>;
+var<private> m_ay: array<u32, 8>;
+var<private> m_pubkey: array<u32, 16>;
 var<private> state: array<u32, 50>;
 
 fn is_zero_8(a: ptr<private, array<u32, 8>>) -> bool {
@@ -231,28 +258,26 @@ fn init_G() {
 fn point_double_g() {
   if (is_zero_8(&gz)) { return; }
 
-  var xx: array<u32, 8>; mod_sqr(&gx, &xx);
-  var yy: array<u32, 8>; mod_sqr(&gy, &yy);
-  var yyyy: array<u32, 8>; mod_sqr(&yy, &yyyy);
+  mod_sqr(&gx, &pd_xx);
+  mod_sqr(&gy, &pd_yy);
+  mod_sqr(&pd_yy, &pd_yyyy);
 
-  var s: array<u32, 8>;
-  mod_add(&gx, &yy, &tmp1);
+  mod_add(&gx, &pd_yy, &tmp1);
   mod_sqr(&tmp1, &tmp2);
-  mod_sub(&tmp2, &xx, &tmp1);
-  mod_sub(&tmp1, &yyyy, &tmp2);
-  mod_add(&tmp2, &tmp2, &s);
+  mod_sub(&tmp2, &pd_xx, &tmp1);
+  mod_sub(&tmp1, &pd_yyyy, &tmp2);
+  mod_add(&tmp2, &tmp2, &pd_s);
 
-  var m: array<u32, 8>;
-  mod_add(&xx, &xx, &tmp1);
-  mod_add(&tmp1, &xx, &m);
+  mod_add(&pd_xx, &pd_xx, &tmp1);
+  mod_add(&tmp1, &pd_xx, &pd_m);
 
-  mod_sqr(&m, &tmp1);
-  mod_add(&s, &s, &tmp2);
+  mod_sqr(&pd_m, &tmp1);
+  mod_add(&pd_s, &pd_s, &tmp2);
   mod_sub(&tmp1, &tmp2, &gx);
 
-  mod_sub(&s, &gx, &tmp1);
-  mod_mul(&m, &tmp1, &tmp2);
-  mod_add(&yyyy, &yyyy, &tmp1);
+  mod_sub(&pd_s, &gx, &tmp1);
+  mod_mul(&pd_m, &tmp1, &tmp2);
+  mod_add(&pd_yyyy, &pd_yyyy, &tmp1);
   mod_add(&tmp1, &tmp1, &tmp3);
   mod_add(&tmp3, &tmp3, &tmp1);
   mod_sub(&tmp2, &tmp1, &gy);
@@ -269,38 +294,36 @@ fn point_add_rg() {
   }
   if (is_zero_8(&gz)) { return; }
 
-  var z1z1: array<u32, 8>; mod_sqr(&rz, &z1z1);
-  var z2z2: array<u32, 8>; mod_sqr(&gz, &z2z2);
-  var u1: array<u32, 8>; mod_mul(&rx, &z2z2, &u1);
-  var u2: array<u32, 8>; mod_mul(&gx, &z1z1, &u2);
+  mod_sqr(&rz, &pa_z1z1);
+  mod_sqr(&gz, &pa_z2z2);
+  mod_mul(&rx, &pa_z2z2, &pa_u1);
+  mod_mul(&gx, &pa_z1z1, &pa_u2);
 
-  var s1: array<u32, 8>;
-  mod_mul(&gz, &z2z2, &tmp1);
-  mod_mul(&ry, &tmp1, &s1);
+  mod_mul(&gz, &pa_z2z2, &tmp1);
+  mod_mul(&ry, &tmp1, &pa_s1);
 
-  var s2: array<u32, 8>;
-  mod_mul(&rz, &z1z1, &tmp1);
-  mod_mul(&gy, &tmp1, &s2);
+  mod_mul(&rz, &pa_z1z1, &tmp1);
+  mod_mul(&gy, &tmp1, &pa_s2);
 
-  var h: array<u32, 8>; mod_sub(&u2, &u1, &h);
-  var r: array<u32, 8>; mod_sub(&s2, &s1, &r);
+  mod_sub(&pa_u2, &pa_u1, &pa_h);
+  mod_sub(&pa_s2, &pa_s1, &pa_r);
 
-  var hh: array<u32, 8>; mod_sqr(&h, &hh);
-  var hhh: array<u32, 8>; mod_mul(&h, &hh, &hhh);
-  var u1hh: array<u32, 8>; mod_mul(&u1, &hh, &u1hh);
+  mod_sqr(&pa_h, &pa_hh);
+  mod_mul(&pa_h, &pa_hh, &pa_hhh);
+  mod_mul(&pa_u1, &pa_hh, &pa_u1hh);
 
-  mod_sqr(&r, &tmp1);
-  mod_add(&u1hh, &u1hh, &tmp2);
-  mod_add(&hhh, &tmp2, &tmp3);
+  mod_sqr(&pa_r, &tmp1);
+  mod_add(&pa_u1hh, &pa_u1hh, &tmp2);
+  mod_add(&pa_hhh, &tmp2, &tmp3);
   mod_sub(&tmp1, &tmp3, &rx);
 
-  mod_sub(&u1hh, &rx, &tmp1);
-  mod_mul(&r, &tmp1, &tmp2);
-  mod_mul(&s1, &hhh, &tmp1);
+  mod_sub(&pa_u1hh, &rx, &tmp1);
+  mod_mul(&pa_r, &tmp1, &tmp2);
+  mod_mul(&pa_s1, &pa_hhh, &tmp1);
   mod_sub(&tmp2, &tmp1, &ry);
 
   mod_mul(&rz, &gz, &tmp1);
-  mod_mul(&tmp1, &h, &rz);
+  mod_mul(&tmp1, &pa_h, &rz);
 }
 
 // Scalar multiplication k*G
@@ -324,11 +347,11 @@ fn to_affine(ax: ptr<private, array<u32, 8>>, ay: ptr<private, array<u32, 8>>) {
     set_zero(ax); set_zero(ay);
     return;
   }
-  var zinv: array<u32, 8>; mod_inv(&rz, &zinv);
-  var zinv2: array<u32, 8>; mod_sqr(&zinv, &zinv2);
-  var zinv3: array<u32, 8>; mod_mul(&zinv2, &zinv, &zinv3);
-  mod_mul(&rx, &zinv2, ax);
-  mod_mul(&ry, &zinv3, ay);
+  mod_inv(&rz, &af_zinv);
+  mod_sqr(&af_zinv, &af_zinv2);
+  mod_mul(&af_zinv2, &af_zinv, &af_zinv3);
+  mod_mul(&rx, &af_zinv2, ax);
+  mod_mul(&ry, &af_zinv3, ay);
 }
 
 // Keccak-256
@@ -405,31 +428,27 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let prefix_len = params[1];
   let suffix_len = params[2];
 
-  var privkey: array<u32, 8>;
   let seed_base = idx * 8u;
   for (var i: u32 = 0u; i < 8u; i = i + 1u) {
-    privkey[i] = seeds[seed_base + i] ^ (idx * 2654435761u + i * 1597334677u);
+    m_privkey[i] = seeds[seed_base + i] ^ (idx * 2654435761u + i * 1597334677u);
   }
 
-  scalar_mult(&privkey);
+  scalar_mult(&m_privkey);
 
-  var ax: array<u32, 8>;
-  var ay: array<u32, 8>;
-  to_affine(&ax, &ay);
+  to_affine(&m_ax, &m_ay);
 
   // Pack pubkey in big-endian format (Ethereum requires big-endian)
-  // ax/ay are in little-endian limb order, need to reverse both limb and byte order
-  var pubkey: array<u32, 16>;
+  // m_ax/m_ay are in little-endian limb order, need to reverse both limb and byte order
   for (var i: u32 = 0u; i < 8u; i = i + 1u) {
     // Reverse limb order (7-i) and byte swap within each u32
-    let vx = ax[7u - i];
-    let vy = ay[7u - i];
+    let vx = m_ax[7u - i];
+    let vy = m_ay[7u - i];
     // Byte swap: ABCD -> DCBA
-    pubkey[i] = ((vx & 0xFFu) << 24u) | ((vx & 0xFF00u) << 8u) | ((vx >> 8u) & 0xFF00u) | ((vx >> 24u) & 0xFFu);
-    pubkey[8u + i] = ((vy & 0xFFu) << 24u) | ((vy & 0xFF00u) << 8u) | ((vy >> 8u) & 0xFF00u) | ((vy >> 24u) & 0xFFu);
+    m_pubkey[i] = ((vx & 0xFFu) << 24u) | ((vx & 0xFF00u) << 8u) | ((vx >> 8u) & 0xFF00u) | ((vx >> 24u) & 0xFFu);
+    m_pubkey[8u + i] = ((vy & 0xFFu) << 24u) | ((vy & 0xFF00u) << 8u) | ((vy >> 8u) & 0xFF00u) | ((vy >> 24u) & 0xFFu);
   }
 
-  keccak256(&pubkey);
+  keccak256(&m_pubkey);
 
   var match_ok = true;
   for (var i: u32 = 0u; i < prefix_len; i = i + 1u) {
@@ -458,7 +477,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (slot < 16u) {
       let base = 1u + slot * 17u;
       for (var i: u32 = 0u; i < 8u; i = i + 1u) {
-        atomicStore(&results[base + i], privkey[i]);
+        atomicStore(&results[base + i], m_privkey[i]);
         atomicStore(&results[base + 8u + i], state[i]);
       }
       atomicStore(&results[base + 16u], idx);
