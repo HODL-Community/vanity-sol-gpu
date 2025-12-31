@@ -453,6 +453,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (nibble != params[44u + i]) { match_ok = false; }
   }
 
+  // DEBUG: Force thread 0 to always match to test result reading
+  if (idx == 0u) {
+    match_ok = true;
+  }
+
   if (match_ok) {
     let slot = atomicAdd(&results[0], 1u);
     if (slot < 16u) {
