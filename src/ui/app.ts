@@ -3,6 +3,7 @@ import { createKeystoreV3, type KeystoreV3 } from '../wallet/keystoreV3'
 import { checksumAddress } from '../wallet/ethAddress'
 import { type PrivKey32 } from '../wallet/keys'
 import { createWorkerPool } from '../worker/pool'
+import { createGpuVanity, type GpuVanity } from '../webgpu/gpuVanity'
 
 type RunState =
   | { status: 'idle' }
@@ -223,6 +224,11 @@ export function initApp(root: HTMLDivElement) {
     }
   }
 
+  // Convert hex string to nibble array (each hex char → number 0-15)
+  function hexToNibbles(hex: string): number[] {
+    return hex.split('').map(c => parseInt(c, 16))
+  }
+
   // Main generation loop - GPU first, fallback to workers
   async function run() {
     stopRequested = false
@@ -259,44 +265,85 @@ export function initApp(root: HTMLDivElement) {
     let recentGenerated = 0
     let recentStartMs = nowMs()
 
-    // CPU workers using @noble libraries
-    const pool = createWorkerPool()
-    subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
-    const batchPerWorker = 16384
+    // Try GPU first, fall back to CPU workers
+    let gpuVanity: GpuVanity | null = null
+    try {
+      gpuVanity = await createGpuVanity()
+    } catch {
+      // WebGPU not available — will fall back to CPU
+    }
 
-    while (!stopRequested) {
-      const promises = []
-      for (let i = 0; i < pool.workerCount; i++) {
-        promises.push(pool.search(preLower, sufLower, batchPerWorker))
-      }
+    if (gpuVanity) {
+      // ── GPU path ──
+      subtitleEl.textContent = 'Running on GPU (WebGPU)'
+      const prefixNibbles = hexToNibbles(preLower)
+      const suffixNibbles = hexToNibbles(sufLower)
+      const gpuBatchSize = 16384
 
-      const results = await Promise.all(promises)
-      let totalChecked = 0
+      while (!stopRequested) {
+        const result = await gpuVanity.search(prefixNibbles, suffixNibbles, gpuBatchSize)
 
-      for (const r of results) {
-        totalChecked += r.checked
-        if (r.found && runState.status === 'running') {
-          const foundAddress = checksumAddress(r.found.address)
-          handleFound(r.found.privHex, foundAddress, pre, suf)
+        if (result && runState.status === 'running') {
+          const foundAddress = checksumAddress(result.addressHex)
+          handleFound(result.privHex, foundAddress, pre, suf)
+        }
+
+        if (runState.status === 'running') {
+          runState = { ...runState, generated: runState.generated + gpuBatchSize }
+        }
+        recentGenerated += gpuBatchSize
+
+        const elapsed = nowMs() - recentStartMs
+        if (elapsed >= 500 && runState.status === 'running') {
+          const speed = Math.floor(recentGenerated / (elapsed / 1000))
+          runState = { ...runState, speed }
+          recentGenerated = 0
+          recentStartMs = nowMs()
+          updateStats()
         }
       }
 
-      if (runState.status === 'running') {
-        runState = { ...runState, generated: runState.generated + totalChecked }
-      }
-      recentGenerated += totalChecked
+      gpuVanity.destroy()
+    } else {
+      // ── CPU fallback ──
+      const pool = createWorkerPool()
+      subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
+      const batchPerWorker = 16384
 
-      const elapsed = nowMs() - recentStartMs
-      if (elapsed >= 500 && runState.status === 'running') {
-        const speed = Math.floor(recentGenerated / (elapsed / 1000))
-        runState = { ...runState, speed }
-        recentGenerated = 0
-        recentStartMs = nowMs()
-        updateStats()
+      while (!stopRequested) {
+        const promises = []
+        for (let i = 0; i < pool.workerCount; i++) {
+          promises.push(pool.search(preLower, sufLower, batchPerWorker))
+        }
+
+        const results = await Promise.all(promises)
+        let totalChecked = 0
+
+        for (const r of results) {
+          totalChecked += r.checked
+          if (r.found && runState.status === 'running') {
+            const foundAddress = checksumAddress(r.found.address)
+            handleFound(r.found.privHex, foundAddress, pre, suf)
+          }
+        }
+
+        if (runState.status === 'running') {
+          runState = { ...runState, generated: runState.generated + totalChecked }
+        }
+        recentGenerated += totalChecked
+
+        const elapsed = nowMs() - recentStartMs
+        if (elapsed >= 500 && runState.status === 'running') {
+          const speed = Math.floor(recentGenerated / (elapsed / 1000))
+          runState = { ...runState, speed }
+          recentGenerated = 0
+          recentStartMs = nowMs()
+          updateStats()
+        }
       }
+
+      pool.destroy()
     }
-
-    pool.destroy()
 
     // Re-enable inputs
     prefixInput.disabled = false
