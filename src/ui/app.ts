@@ -3,7 +3,10 @@ import { createKeystoreV3, type KeystoreV3 } from '../wallet/keystoreV3'
 import { checksumAddress } from '../wallet/ethAddress'
 import { type PrivKey32 } from '../wallet/keys'
 import { createWorkerPool } from '../worker/pool'
-import { createGpuVanity, type GpuVanity } from '../webgpu/gpuVanity'
+import { createGpuVanity } from '../webgpu/gpuVanity'
+
+// Benchmark cache: once determined, reuse the winner for the session
+let cachedBackend: 'gpu' | 'cpu' | null = null
 
 type RunState =
   | { status: 'idle' }
@@ -229,7 +232,7 @@ export function initApp(root: HTMLDivElement) {
     return hex.split('').map(c => parseInt(c, 16))
   }
 
-  // Main generation loop - GPU first, fallback to workers
+  // Main generation loop - auto-benchmarks GPU vs CPU on first run
   async function run() {
     stopRequested = false
     btnGenerate.textContent = 'Stop'
@@ -259,22 +262,95 @@ export function initApp(root: HTMLDivElement) {
       return
     }
 
+    // Helper to reset UI on early exit during benchmark
+    function resetUI() {
+      prefixInput.disabled = false
+      suffixInput.disabled = false
+      caseSensitive.disabled = false
+      btnGenerate.textContent = 'Generate'
+      btnGenerate.classList.remove('running')
+      previewEl.classList.remove('generating')
+      subtitleEl.textContent = 'Fast vanity address generator'
+      runState = { status: 'idle' }
+    }
+
+    // ── Auto-benchmark on first run ──
+    if (cachedBackend === null) {
+      const BENCH_DURATION_MS = 3000
+      const BENCH_BATCH = 16384
+
+      // Check if GPU is available at all
+      let gpuAvailable = false
+      try {
+        const testGpu = await createGpuVanity()
+        testGpu.destroy()
+        gpuAvailable = true
+      } catch {
+        // WebGPU not available
+      }
+
+      if (stopRequested) { resetUI(); return }
+
+      if (!gpuAvailable) {
+        // No GPU — skip benchmark, just use CPU
+        cachedBackend = 'cpu'
+      } else {
+        // Benchmark GPU
+        subtitleEl.textContent = 'Benchmarking GPU...'
+        const dummyNibbles = [0, 0, 0, 0, 0, 0, 0, 0]
+        let gpuChecked = 0
+        const gpuVanity = await createGpuVanity()
+        const gpuStart = nowMs()
+        while (nowMs() - gpuStart < BENCH_DURATION_MS && !stopRequested) {
+          await gpuVanity.search(dummyNibbles, dummyNibbles, BENCH_BATCH)
+          gpuChecked += BENCH_BATCH
+        }
+        const gpuSpeed = gpuChecked / ((nowMs() - gpuStart) / 1000)
+        gpuVanity.destroy()
+
+        if (stopRequested) { resetUI(); return }
+
+        // Benchmark CPU
+        subtitleEl.textContent = 'Benchmarking CPU...'
+        let cpuChecked = 0
+        const benchPool = createWorkerPool()
+        const cpuStart = nowMs()
+        while (nowMs() - cpuStart < BENCH_DURATION_MS && !stopRequested) {
+          const promises = []
+          for (let i = 0; i < benchPool.workerCount; i++) {
+            promises.push(benchPool.search('00000000', '', BENCH_BATCH))
+          }
+          const results = await Promise.all(promises)
+          for (const r of results) cpuChecked += r.checked
+        }
+        const cpuSpeed = cpuChecked / ((nowMs() - cpuStart) / 1000)
+        benchPool.destroy()
+
+        if (stopRequested) { resetUI(); return }
+
+        // Pick the winner
+        cachedBackend = gpuSpeed >= cpuSpeed ? 'gpu' : 'cpu'
+
+        // Show result for 2 seconds
+        const gpuStr = `GPU: ${formatNumber(Math.round(gpuSpeed))}/s`
+        const cpuStr = `CPU: ${formatNumber(Math.round(cpuSpeed))}/s`
+        subtitleEl.textContent = `${gpuStr} vs ${cpuStr} → Using ${cachedBackend.toUpperCase()}`
+        await new Promise(resolve => setTimeout(resolve, 2000))
+
+        if (stopRequested) { resetUI(); return }
+      }
+    }
+
+    // ── Start the real search ──
     const startedAtMs = nowMs()
     runState = { status: 'running', startedAtMs, generated: 0, speed: 0 }
 
     let recentGenerated = 0
     let recentStartMs = nowMs()
 
-    // Try GPU first, fall back to CPU workers
-    let gpuVanity: GpuVanity | null = null
-    try {
-      gpuVanity = await createGpuVanity()
-    } catch {
-      // WebGPU not available — will fall back to CPU
-    }
-
-    if (gpuVanity) {
+    if (cachedBackend === 'gpu') {
       // ── GPU path ──
+      const gpuVanity = await createGpuVanity()
       subtitleEl.textContent = 'Running on GPU (WebGPU)'
       const prefixNibbles = hexToNibbles(preLower)
       const suffixNibbles = hexToNibbles(sufLower)
@@ -305,7 +381,7 @@ export function initApp(root: HTMLDivElement) {
 
       gpuVanity.destroy()
     } else {
-      // ── CPU fallback ──
+      // ── CPU path ──
       const pool = createWorkerPool()
       subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
       const batchPerWorker = 16384
