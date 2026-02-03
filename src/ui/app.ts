@@ -3,10 +3,11 @@ import { createKeystoreV3, type KeystoreV3 } from '../wallet/keystoreV3'
 import { checksumAddress } from '../wallet/ethAddress'
 import { type PrivKey32 } from '../wallet/keys'
 import { createWorkerPool } from '../worker/pool'
+import { createWasmWorkerPool, type WasmWorkerPool } from '../worker/wasmPool'
 import { createGpuVanity } from '../webgpu/gpuVanity'
 
 // Benchmark cache: once determined, reuse the winner for the session
-let cachedBackend: 'gpu' | 'cpu' | null = null
+let cachedBackend: 'gpu' | 'wasm' | 'cpu' | null = null
 
 type RunState =
   | { status: 'idle' }
@@ -274,7 +275,7 @@ export function initApp(root: HTMLDivElement) {
       runState = { status: 'idle' }
     }
 
-    // ── Auto-benchmark on first run (GPU vs CPU) ──
+    // ── Auto-benchmark on first run (GPU vs WASM vs CPU) ──
     if (cachedBackend === null) {
       const BENCH_DURATION_MS = 3000
       const BENCH_BATCH = 16384
@@ -292,7 +293,9 @@ export function initApp(root: HTMLDivElement) {
       if (stopRequested) { resetUI(); return }
 
       let gpuSpeed = 0
+      let wasmSpeed = 0
       let cpuSpeed = 0
+      let wasmPool: WasmWorkerPool | null = null
 
       if (gpuAvailable) {
         // Benchmark GPU
@@ -311,6 +314,31 @@ export function initApp(root: HTMLDivElement) {
         if (stopRequested) { resetUI(); return }
       }
 
+      // Benchmark WASM (sequential init with timeout, won't hang)
+      subtitleEl.textContent = 'Benchmarking WASM...'
+      wasmPool = await createWasmWorkerPool(10000)
+
+      if (wasmPool && !stopRequested) {
+        let wasmChecked = 0
+        const wasmStart = nowMs()
+        while (nowMs() - wasmStart < BENCH_DURATION_MS && !stopRequested) {
+          const promises = []
+          for (let i = 0; i < wasmPool.workerCount; i++) {
+            promises.push(wasmPool.search('00000000', '', BENCH_BATCH))
+          }
+          const results = await Promise.all(promises)
+          for (const r of results) wasmChecked += r.checked
+        }
+        wasmSpeed = wasmChecked / ((nowMs() - wasmStart) / 1000)
+        // Don't destroy yet — we might use it for the real search
+      }
+
+      if (stopRequested) {
+        wasmPool?.destroy()
+        resetUI()
+        return
+      }
+
       // Benchmark CPU
       subtitleEl.textContent = 'Benchmarking CPU...'
       let cpuChecked = 0
@@ -327,20 +355,37 @@ export function initApp(root: HTMLDivElement) {
       cpuSpeed = cpuChecked / ((nowMs() - cpuStart) / 1000)
       benchPool.destroy()
 
-      if (stopRequested) { resetUI(); return }
+      if (stopRequested) {
+        wasmPool?.destroy()
+        resetUI()
+        return
+      }
 
       // Pick the winner
-      const winner: 'gpu' | 'cpu' = (gpuAvailable && gpuSpeed > cpuSpeed) ? 'gpu' : 'cpu'
+      const speeds: [string, number][] = []
+      if (gpuAvailable) speeds.push(['gpu', gpuSpeed])
+      if (wasmPool) speeds.push(['wasm', wasmSpeed])
+      speeds.push(['cpu', cpuSpeed])
+      speeds.sort((a, b) => b[1] - a[1])
+      const winner = speeds[0][0] as 'gpu' | 'wasm' | 'cpu'
       cachedBackend = winner
+
+      // Destroy WASM pool if it lost
+      if (winner !== 'wasm') wasmPool?.destroy()
 
       // Show result for 2 seconds
       const parts: string[] = []
       if (gpuAvailable) parts.push(`GPU: ${formatNumber(Math.round(gpuSpeed))}/s`)
+      if (wasmPool) parts.push(`WASM: ${formatNumber(Math.round(wasmSpeed))}/s`)
       parts.push(`CPU: ${formatNumber(Math.round(cpuSpeed))}/s`)
       subtitleEl.textContent = `${parts.join(' | ')} → Using ${winner.toUpperCase()}`
       await new Promise(resolve => setTimeout(resolve, 2000))
 
-      if (stopRequested) { resetUI(); return }
+      if (stopRequested) {
+        if (winner === 'wasm') wasmPool?.destroy()
+        resetUI()
+        return
+      }
     }
 
     // ── Start the real search ──
@@ -382,7 +427,58 @@ export function initApp(root: HTMLDivElement) {
       }
 
       gpuVanity.destroy()
-    } else {
+    } else if (cachedBackend === 'wasm') {
+      // ── WASM path (pool already initialized from benchmark) ──
+      const pool = await createWasmWorkerPool(10000)
+      if (!pool) {
+        // Fallback to CPU if WASM init fails on second attempt
+        cachedBackend = 'cpu'
+        subtitleEl.textContent = 'WASM failed, falling back to CPU...'
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+
+      if (pool && cachedBackend === 'wasm') {
+        subtitleEl.textContent = `Running on WASM (${pool.workerCount} workers)`
+        const batchPerWorker = 16384
+
+        while (!stopRequested) {
+          const promises = []
+          for (let i = 0; i < pool.workerCount; i++) {
+            promises.push(pool.search(preLower, sufLower, batchPerWorker))
+          }
+
+          const results = await Promise.all(promises)
+          let totalChecked = 0
+
+          for (const r of results) {
+            totalChecked += r.checked
+            if (r.found && runState.status === 'running') {
+              const foundAddress = checksumAddress(r.found.address)
+              handleFound(r.found.privHex, foundAddress, pre, suf)
+            }
+          }
+
+          if (runState.status === 'running') {
+            runState = { ...runState, generated: runState.generated + totalChecked }
+          }
+          recentGenerated += totalChecked
+
+          const elapsed = nowMs() - recentStartMs
+          if (elapsed >= 500 && runState.status === 'running') {
+            const speed = Math.floor(recentGenerated / (elapsed / 1000))
+            runState = { ...runState, speed }
+            recentGenerated = 0
+            recentStartMs = nowMs()
+            updateStats()
+          }
+        }
+
+        pool.destroy()
+      }
+    }
+
+    // CPU fallback (also handles WASM→CPU fallback)
+    if (cachedBackend === 'cpu' && !stopRequested && runState.status === 'running') {
       // ── CPU path ──
       const pool = createWorkerPool()
       subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
