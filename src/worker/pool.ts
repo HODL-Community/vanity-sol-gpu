@@ -11,7 +11,13 @@ type PendingTask = {
 }
 
 export type WorkerPool = {
-  search(prefixLower: string, suffixLower: string, batchSize: number, target: SearchTarget): Promise<SearchResult>
+  search(
+    prefix: string,
+    suffix: string,
+    batchSize: number,
+    target: SearchTarget,
+    caseSensitive: boolean
+  ): Promise<SearchResult>
   destroy(): void
   workerCount: number
 }
@@ -38,7 +44,13 @@ export function createWorkerPool(): WorkerPool {
 
   let workerIndex = 0
 
-  function search(prefixLower: string, suffixLower: string, batchSize: number, target: SearchTarget): Promise<SearchResult> {
+  function search(
+    prefix: string,
+    suffix: string,
+    batchSize: number,
+    target: SearchTarget,
+    caseSensitive: boolean
+  ): Promise<SearchResult> {
     if (destroyed) return Promise.reject(new Error('Pool destroyed'))
 
     return new Promise((resolve) => {
@@ -52,9 +64,10 @@ export function createWorkerPool(): WorkerPool {
         type: 'search',
         id,
         batchSize,
-        prefixLower,
-        suffixLower,
-        target
+        prefix,
+        suffix,
+        caseSensitive,
+        target,
       })
     })
   }

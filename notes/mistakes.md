@@ -13,3 +13,11 @@
 - Mistake: I interpreted “remove EIP-55” as removing the feature instead of removing the wording in the selector, and merged that broader behavior change.
 - Avoid: Confirm scope by mapping the request to explicit targets (label text vs runtime logic) before editing behavior paths.
 - Cleanup: Restore the previous behavior and apply only the requested copy change in a follow-up PR.
+
+- Mistake: I tried to remove files using `rm -rf` in this environment, and the command was blocked by policy.
+- Avoid: Prefer `apply_patch` delete hunks for tracked-file removals so cleanup is tool-policy compatible.
+- Cleanup: Re-run the file removals via `apply_patch` and verify deletions with `git status --short`.
+
+- Mistake: I imported `@noble/curves/ed25519` without the `.js` extension, which failed TypeScript module resolution under the repo’s ESM/bundler settings.
+- Avoid: For `@noble/*` subpath imports in this setup, use explicit `.js` subpath imports from the start and run a build after dependency swaps.
+- Cleanup: Replace imports with `@noble/curves/ed25519.js` and rerun `npm run build` to confirm.
