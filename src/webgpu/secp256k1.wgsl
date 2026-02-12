@@ -364,12 +364,20 @@ fn rotl64(lo: u32, hi: u32, n: u32) -> vec2<u32> {
   return vec2<u32>((hi << m) | (lo >> (32u - m)), (lo << m) | (hi >> (32u - m)));
 }
 
-fn keccak256(pubkey: ptr<private, array<u32, 16>>) {
-  for (var i: u32 = 0u; i < 50u; i = i + 1u) { state[i] = 0u; }
-  for (var i: u32 = 0u; i < 16u; i = i + 1u) { state[i] = (*pubkey)[i]; }
-  state[16u] = state[16u] ^ 0x01u;
-  state[33u] = state[33u] ^ 0x80000000u;
+fn state_get_byte(byte_idx: u32) -> u32 {
+  let word_idx = byte_idx / 4u;
+  let byte_in_word = byte_idx % 4u;
+  return (state[word_idx] >> (byte_in_word * 8u)) & 0xFFu;
+}
 
+fn state_set_byte(byte_idx: u32, value: u32) {
+  let word_idx = byte_idx / 4u;
+  let shift = (byte_idx % 4u) * 8u;
+  let mask = ~(0xFFu << shift);
+  state[word_idx] = (state[word_idx] & mask) | ((value & 0xFFu) << shift);
+}
+
+fn keccak_permute() {
   let PILN = array<u32, 24>(10u,7u,11u,17u,18u,3u,5u,16u,8u,21u,24u,4u,15u,23u,19u,13u,12u,2u,20u,14u,22u,9u,6u,1u);
   let ROTC = array<u32, 24>(1u,3u,6u,10u,15u,21u,28u,36u,45u,55u,2u,14u,27u,41u,56u,8u,25u,43u,62u,18u,39u,61u,20u,44u);
 
@@ -419,6 +427,36 @@ fn keccak256(pubkey: ptr<private, array<u32, 16>>) {
   }
 }
 
+fn keccak256_pubkey(pubkey: ptr<private, array<u32, 16>>) {
+  for (var i: u32 = 0u; i < 50u; i = i + 1u) { state[i] = 0u; }
+  for (var i: u32 = 0u; i < 16u; i = i + 1u) { state[i] = (*pubkey)[i]; }
+  state[16u] = state[16u] ^ 0x01u;
+  state[33u] = state[33u] ^ 0x80000000u;
+  keccak_permute();
+}
+
+fn keccak256_first_contract_from_sender_hash() {
+  var sender: array<u32, 20>;
+  for (var i: u32 = 0u; i < 20u; i = i + 1u) {
+    sender[i] = state_get_byte(12u + i);
+  }
+
+  for (var i: u32 = 0u; i < 50u; i = i + 1u) { state[i] = 0u; }
+
+  // keccak(0xd6 ++ 0x94 ++ wallet_address ++ 0x80) => CREATE nonce-0 address
+  state_set_byte(0u, 0xd6u);
+  state_set_byte(1u, 0x94u);
+  for (var i: u32 = 0u; i < 20u; i = i + 1u) {
+    state_set_byte(2u + i, sender[i]);
+  }
+  state_set_byte(22u, 0x80u);
+
+  // Keccak domain separation + final padding bit.
+  state_set_byte(23u, 0x01u);
+  state_set_byte(135u, 0x80u);
+  keccak_permute();
+}
+
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let idx = gid.x;
@@ -427,6 +465,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let prefix_len = params[1];
   let suffix_len = params[2];
+  let search_mode = params[3];
 
   let seed_base = idx * 8u;
   for (var i: u32 = 0u; i < 8u; i = i + 1u) {
@@ -448,15 +487,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     m_pubkey[8u + i] = ((vy & 0xFFu) << 24u) | ((vy & 0xFF00u) << 8u) | ((vy >> 8u) & 0xFF00u) | ((vy >> 24u) & 0xFFu);
   }
 
-  keccak256(&m_pubkey);
+  keccak256_pubkey(&m_pubkey);
+  if (search_mode == 1u) {
+    keccak256_first_contract_from_sender_hash();
+  }
 
   var match_ok = true;
   for (var i: u32 = 0u; i < prefix_len; i = i + 1u) {
     if (!match_ok) { break; }
     let byte_idx = 12u + i / 2u;
-    let word_idx = byte_idx / 4u;
-    let byte_in_word = byte_idx % 4u;
-    let byte_val = (state[word_idx] >> (byte_in_word * 8u)) & 0xFFu;
+    let byte_val = state_get_byte(byte_idx);
     let nibble = select(byte_val >> 4u, byte_val & 0xFu, i % 2u == 1u);
     if (nibble != params[4u + i]) { match_ok = false; }
   }
@@ -465,9 +505,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (!match_ok) { break; }
     let addr_nibble = 39u - (suffix_len - 1u - i);
     let byte_idx = 12u + addr_nibble / 2u;
-    let word_idx = byte_idx / 4u;
-    let byte_in_word = byte_idx % 4u;
-    let byte_val = (state[word_idx] >> (byte_in_word * 8u)) & 0xFFu;
+    let byte_val = state_get_byte(byte_idx);
     let nibble = select(byte_val >> 4u, byte_val & 0xFu, addr_nibble % 2u == 1u);
     if (nibble != params[44u + i]) { match_ok = false; }
   }

@@ -7,6 +7,7 @@ A fast Ethereum vanity address generator that runs entirely in your browser.
 - **Multi-threaded** - Uses Web Workers for parallel address generation
 - **Privacy First** - All computations run locally in your browser, no server communication
 - **Custom Prefix/Suffix** - Find addresses starting or ending with your desired characters
+- **Wallet + First Contract Targets** - Scan either the wallet address or its first `CREATE` deploy address (nonce 0)
 - **Case Sensitive** - Optional EIP-55 checksum matching
 - **Keystore Export** - Download encrypted keystore JSON files
 
@@ -16,10 +17,11 @@ A fast Ethereum vanity address generator that runs entirely in your browser.
 
 ## Usage
 
-1. Enter your desired prefix and/or suffix (hex characters: 0-9, a-f)
-2. Toggle case-sensitive if you want exact case matching (slower)
-3. Click Generate and wait for a match
-4. Once found, reveal the private key or download as encrypted keystore
+1. Choose target: wallet address or first contract address
+2. Enter your desired prefix and/or suffix (hex characters: 0-9, a-f)
+3. Toggle case-sensitive if you want exact case matching (slower)
+4. Click Generate and wait for a match
+5. Once found, reveal the private key or download as encrypted keystore
 
 ## Security
 

@@ -1,4 +1,5 @@
 import WasmVanityWorker from './wasmVanityWorker?worker'
+import type { SearchTarget } from '../searchTarget'
 
 type SearchResult = {
   checked: number
@@ -10,7 +11,7 @@ type PendingTask = {
 }
 
 export type WasmWorkerPool = {
-  search(prefixLower: string, suffixLower: string, batchSize: number): Promise<SearchResult>
+  search(prefixLower: string, suffixLower: string, batchSize: number, target: SearchTarget): Promise<SearchResult>
   destroy(): void
   workerCount: number
 }
@@ -80,7 +81,7 @@ export async function createWasmWorkerPool(initTimeoutMs = 10000): Promise<WasmW
 
   let workerIndex = 0
 
-  function search(prefixLower: string, suffixLower: string, batchSize: number): Promise<SearchResult> {
+  function search(prefixLower: string, suffixLower: string, batchSize: number, target: SearchTarget): Promise<SearchResult> {
     if (destroyed) return Promise.reject(new Error('Pool destroyed'))
 
     return new Promise((resolve) => {
@@ -95,7 +96,8 @@ export async function createWasmWorkerPool(initTimeoutMs = 10000): Promise<WasmW
         id,
         batchSize,
         prefixLower,
-        suffixLower
+        suffixLower,
+        target
       })
     })
   }

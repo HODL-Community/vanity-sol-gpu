@@ -1,10 +1,11 @@
 import { bytesToHex, hexToBytes, nowMs } from '../utils/hex'
 import { createKeystoreV3, type KeystoreV3 } from '../wallet/keystoreV3'
-import { checksumAddress } from '../wallet/ethAddress'
-import { type PrivKey32 } from '../wallet/keys'
+import { checksumAddress, pubkeyToAddressBytes } from '../wallet/ethAddress'
+import { privateKeyToPublicKey64, type PrivKey32 } from '../wallet/keys'
 import { createWorkerPool } from '../worker/pool'
 import { createWasmWorkerPool, type WasmWorkerPool } from '../worker/wasmPool'
 import { createGpuVanity } from '../webgpu/gpuVanity'
+import { type SearchTarget, searchTargetToGpuMode } from '../searchTarget'
 
 // Benchmark cache: once determined, reuse the winner for the session
 let cachedBackend: 'gpu' | 'wasm' | 'cpu' | null = null
@@ -53,6 +54,19 @@ function estimateTime(difficulty: number, speed: number): string {
   return '~' + formatTime(seconds)
 }
 
+function targetPreviewLabel(target: SearchTarget): string {
+  return target === 'first-contract' ? 'First Contract Address Preview' : 'Wallet Address Preview'
+}
+
+function targetResultLabel(target: SearchTarget): string {
+  return target === 'first-contract' ? 'First Contract Address' : 'Wallet Address'
+}
+
+function deriveWalletAddressFromPriv(priv: PrivKey32): string {
+  const pub64 = privateKeyToPublicKey64(priv)
+  return checksumAddress('0x' + bytesToHex(pubkeyToAddressBytes(pub64)))
+}
+
 async function copyToClipboard(text: string, btn: HTMLButtonElement) {
   try {
     await navigator.clipboard.writeText(text)
@@ -84,7 +98,7 @@ export function initApp(root: HTMLDivElement) {
 
     <div class="panel">
       <div class="preview" id="preview">
-        <div class="preview-label">Address Preview</div>
+        <div class="preview-label" id="preview-label">Wallet Address Preview</div>
         <div class="preview-address" id="preview-addr"></div>
       </div>
 
@@ -100,6 +114,13 @@ export function initApp(root: HTMLDivElement) {
       </div>
 
       <div class="options">
+        <div class="target-wrap">
+          <label for="search-target">Target</label>
+          <select id="search-target">
+            <option value="wallet">Wallet address</option>
+            <option value="first-contract">First contract address (nonce 0)</option>
+          </select>
+        </div>
         <label class="checkbox-wrap">
           <input type="checkbox" id="case-sensitive">
           <span>Case-sensitive (EIP-55)</span>
@@ -125,10 +146,17 @@ export function initApp(root: HTMLDivElement) {
 
       <div class="result" id="result">
         <div class="result-row">
-          <div class="result-label">Address</div>
+          <div class="result-label" id="result-addr-label">Address</div>
           <div class="result-value" id="result-addr">
             <span id="addr-text"></span>
             <button class="copy-btn" id="copy-addr">Copy</button>
+          </div>
+        </div>
+        <div class="result-row hidden" id="wallet-row">
+          <div class="result-label">Deployer Wallet</div>
+          <div class="result-value" id="result-wallet">
+            <span id="wallet-text"></span>
+            <button class="copy-btn" id="copy-wallet">Copy</button>
           </div>
         </div>
         <div class="result-row">
@@ -156,17 +184,23 @@ export function initApp(root: HTMLDivElement) {
   // Elements
   const prefixInput = root.querySelector<HTMLInputElement>('#prefix')!
   const suffixInput = root.querySelector<HTMLInputElement>('#suffix')!
+  const searchTargetSelect = root.querySelector<HTMLSelectElement>('#search-target')!
   const caseSensitive = root.querySelector<HTMLInputElement>('#case-sensitive')!
   const previewEl = root.querySelector<HTMLDivElement>('#preview')!
+  const previewLabel = root.querySelector<HTMLDivElement>('#preview-label')!
   const previewAddr = root.querySelector<HTMLDivElement>('#preview-addr')!
   const btnGenerate = root.querySelector<HTMLButtonElement>('#btn-generate')!
   const statSpeed = root.querySelector<HTMLDivElement>('#stat-speed')!
   const statChecked = root.querySelector<HTMLDivElement>('#stat-checked')!
   const statEta = root.querySelector<HTMLDivElement>('#stat-eta')!
   const resultEl = root.querySelector<HTMLDivElement>('#result')!
+  const resultAddrLabel = root.querySelector<HTMLDivElement>('#result-addr-label')!
   const addrText = root.querySelector<HTMLSpanElement>('#addr-text')!
+  const walletRow = root.querySelector<HTMLDivElement>('#wallet-row')!
+  const walletText = root.querySelector<HTMLSpanElement>('#wallet-text')!
   const pkText = root.querySelector<HTMLSpanElement>('#pk-text')!
   const copyAddr = root.querySelector<HTMLButtonElement>('#copy-addr')!
+  const copyWallet = root.querySelector<HTMLButtonElement>('#copy-wallet')!
   const copyPk = root.querySelector<HTMLButtonElement>('#copy-pk')!
   const btnReveal = root.querySelector<HTMLButtonElement>('#btn-reveal')!
   const btnDownload = root.querySelector<HTMLButtonElement>('#btn-download')!
@@ -175,7 +209,7 @@ export function initApp(root: HTMLDivElement) {
   // State
   let runState: RunState = { status: 'idle' }
   let stopRequested = false
-  let lastFound: { priv: PrivKey32; address: string } | null = null
+  let lastFound: { priv: PrivKey32; targetAddress: string; walletAddress: string; target: SearchTarget } | null = null
 
   // Deterministic noise based on position (looks random but stable)
   const noiseChars = '7a3f8c2e9b1d5046'
@@ -187,8 +221,18 @@ export function initApp(root: HTMLDivElement) {
     return result
   }
 
+  function selectedTarget(): SearchTarget {
+    return searchTargetSelect.value === 'first-contract' ? 'first-contract' : 'wallet'
+  }
+
+  function updateTargetLabels() {
+    const target = selectedTarget()
+    previewLabel.textContent = targetPreviewLabel(target)
+  }
+
   // Update preview
   function updatePreview() {
+    updateTargetLabels()
     const pre = sanitizeHex(prefixInput.value)
     const suf = sanitizeHex(suffixInput.value)
     const preLower = pre.toLowerCase()
@@ -240,18 +284,22 @@ export function initApp(root: HTMLDivElement) {
     btnGenerate.classList.add('running')
     previewEl.classList.add('generating')
     resultEl.classList.remove('visible', 'found')
+    walletRow.classList.add('hidden')
+    walletText.textContent = ''
     copyPk.classList.add('hidden')
     lastFound = null
 
     // Disable inputs while running
     prefixInput.disabled = true
     suffixInput.disabled = true
+    searchTargetSelect.disabled = true
     caseSensitive.disabled = true
 
     const pre = sanitizeHex(prefixInput.value)
     const suf = sanitizeHex(suffixInput.value)
     const preLower = pre.toLowerCase()
     const sufLower = suf.toLowerCase()
+    const target = selectedTarget()
 
     if (pre.length + suf.length === 0) {
       btnGenerate.textContent = 'Generate'
@@ -259,6 +307,7 @@ export function initApp(root: HTMLDivElement) {
       previewEl.classList.remove('generating')
       prefixInput.disabled = false
       suffixInput.disabled = false
+      searchTargetSelect.disabled = false
       caseSensitive.disabled = false
       return
     }
@@ -267,6 +316,7 @@ export function initApp(root: HTMLDivElement) {
     function resetUI() {
       prefixInput.disabled = false
       suffixInput.disabled = false
+      searchTargetSelect.disabled = false
       caseSensitive.disabled = false
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
@@ -305,7 +355,7 @@ export function initApp(root: HTMLDivElement) {
         const gpuVanity = await createGpuVanity()
         const gpuStart = nowMs()
         while (nowMs() - gpuStart < BENCH_DURATION_MS && !stopRequested) {
-          await gpuVanity.search(dummyNibbles, dummyNibbles, BENCH_BATCH)
+          await gpuVanity.search(dummyNibbles, dummyNibbles, BENCH_BATCH, searchTargetToGpuMode(target))
           gpuChecked += BENCH_BATCH
         }
         gpuSpeed = gpuChecked / ((nowMs() - gpuStart) / 1000)
@@ -324,7 +374,7 @@ export function initApp(root: HTMLDivElement) {
         while (nowMs() - wasmStart < BENCH_DURATION_MS && !stopRequested) {
           const promises = []
           for (let i = 0; i < wasmPool.workerCount; i++) {
-            promises.push(wasmPool.search('00000000', '', BENCH_BATCH))
+            promises.push(wasmPool.search('00000000', '', BENCH_BATCH, target))
           }
           const results = await Promise.all(promises)
           for (const r of results) wasmChecked += r.checked
@@ -347,7 +397,7 @@ export function initApp(root: HTMLDivElement) {
       while (nowMs() - cpuStart < BENCH_DURATION_MS && !stopRequested) {
         const promises = []
         for (let i = 0; i < benchPool.workerCount; i++) {
-          promises.push(benchPool.search('00000000', '', BENCH_BATCH))
+          promises.push(benchPool.search('00000000', '', BENCH_BATCH, target))
         }
         const results = await Promise.all(promises)
         for (const r of results) cpuChecked += r.checked
@@ -404,11 +454,16 @@ export function initApp(root: HTMLDivElement) {
       const gpuBatchSize = 16384
 
       while (!stopRequested) {
-        const result = await gpuVanity.search(prefixNibbles, suffixNibbles, gpuBatchSize)
+        const result = await gpuVanity.search(
+          prefixNibbles,
+          suffixNibbles,
+          gpuBatchSize,
+          searchTargetToGpuMode(target)
+        )
 
         if (result && runState.status === 'running') {
           const foundAddress = checksumAddress(result.addressHex)
-          handleFound(result.privHex, foundAddress, pre, suf)
+          handleFound(result.privHex, foundAddress, pre, suf, target)
         }
 
         if (runState.status === 'running') {
@@ -444,7 +499,7 @@ export function initApp(root: HTMLDivElement) {
         while (!stopRequested) {
           const promises = []
           for (let i = 0; i < pool.workerCount; i++) {
-            promises.push(pool.search(preLower, sufLower, batchPerWorker))
+            promises.push(pool.search(preLower, sufLower, batchPerWorker, target))
           }
 
           const results = await Promise.all(promises)
@@ -454,7 +509,7 @@ export function initApp(root: HTMLDivElement) {
             totalChecked += r.checked
             if (r.found && runState.status === 'running') {
               const foundAddress = checksumAddress(r.found.address)
-              handleFound(r.found.privHex, foundAddress, pre, suf)
+              handleFound(r.found.privHex, foundAddress, pre, suf, target)
             }
           }
 
@@ -487,7 +542,7 @@ export function initApp(root: HTMLDivElement) {
       while (!stopRequested) {
         const promises = []
         for (let i = 0; i < pool.workerCount; i++) {
-          promises.push(pool.search(preLower, sufLower, batchPerWorker))
+          promises.push(pool.search(preLower, sufLower, batchPerWorker, target))
         }
 
         const results = await Promise.all(promises)
@@ -497,7 +552,7 @@ export function initApp(root: HTMLDivElement) {
           totalChecked += r.checked
           if (r.found && runState.status === 'running') {
             const foundAddress = checksumAddress(r.found.address)
-            handleFound(r.found.privHex, foundAddress, pre, suf)
+            handleFound(r.found.privHex, foundAddress, pre, suf, target)
           }
         }
 
@@ -522,6 +577,7 @@ export function initApp(root: HTMLDivElement) {
     // Re-enable inputs
     prefixInput.disabled = false
     suffixInput.disabled = false
+    searchTargetSelect.disabled = false
     caseSensitive.disabled = false
 
     if (!stopRequested || runState.status === 'running') {
@@ -533,7 +589,7 @@ export function initApp(root: HTMLDivElement) {
     }
   }
 
-  function handleFound(privHex: string, foundAddress: string, pre: string, suf: string) {
+  function handleFound(privHex: string, foundAddress: string, pre: string, suf: string, target: SearchTarget) {
     const preLower = pre.toLowerCase()
     const sufLower = suf.toLowerCase()
     const addrToCompare = caseSensitive.checked ? foundAddress : foundAddress.toLowerCase()
@@ -545,17 +601,25 @@ export function initApp(root: HTMLDivElement) {
 
     if (prefixOk && suffixOk) {
       const priv = hexToBytes(privHex) as PrivKey32
+      const walletAddress = target === 'wallet' ? foundAddress : deriveWalletAddressFromPriv(priv)
       const timeS = (nowMs() - (runState as any).startedAtMs) / 1000
       const generated: number = runState.status === 'running' ? runState.generated : 0
 
       runState = { status: 'found', generated, time: timeS, foundPriv: priv, foundAddress }
-      lastFound = { priv, address: foundAddress }
+      lastFound = { priv, targetAddress: foundAddress, walletAddress, target }
+      resultAddrLabel.textContent = targetResultLabel(target)
 
       const preMatch = foundAddress.slice(2, 2 + pre.length)
       const sufMatch = foundAddress.slice(2 + 40 - suf.length)
       const midPart = foundAddress.slice(2 + pre.length, 2 + 40 - suf.length)
 
       addrText.innerHTML = `0x<span class="highlight">${preMatch}</span>${midPart}<span class="highlight">${sufMatch}</span>`
+      walletText.textContent = walletAddress
+      if (target === 'first-contract') {
+        walletRow.classList.remove('hidden')
+      } else {
+        walletRow.classList.add('hidden')
+      }
       pkText.textContent = '\u2022'.repeat(64)
 
       resultEl.classList.add('visible', 'found')
@@ -576,6 +640,10 @@ export function initApp(root: HTMLDivElement) {
 
   suffixInput.addEventListener('input', () => {
     suffixInput.value = sanitizeHex(suffixInput.value)
+    updatePreview()
+  })
+
+  searchTargetSelect.addEventListener('change', () => {
     updatePreview()
   })
 
@@ -607,7 +675,11 @@ export function initApp(root: HTMLDivElement) {
   })
 
   copyAddr.addEventListener('click', () => {
-    if (lastFound) void copyToClipboard(lastFound.address, copyAddr)
+    if (lastFound) void copyToClipboard(lastFound.targetAddress, copyAddr)
+  })
+
+  copyWallet.addEventListener('click', () => {
+    if (lastFound) void copyToClipboard(lastFound.walletAddress, copyWallet)
   })
 
   copyPk.addEventListener('click', () => {
@@ -625,7 +697,7 @@ export function initApp(root: HTMLDivElement) {
     const blob = new Blob([JSON.stringify(ks, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `${lastFound.address}.json`
+    a.download = `${lastFound.walletAddress}.json`
     a.click()
     URL.revokeObjectURL(a.href)
   })
