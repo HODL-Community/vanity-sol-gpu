@@ -32,7 +32,7 @@
     <text x="24" y="37" fill="#DBEAFF" font-family="'SF Pro Display', 'Inter', 'Segoe UI', sans-serif" font-size="25" font-weight="600">WebGPU / WASM / CPU</text>
 
     <rect x="326" y="0" width="320" height="58" rx="14" fill="#152741" stroke="#6F9FFF"/>
-    <text x="351" y="37" fill="#DBEAFF" font-family="'SF Pro Display', 'Inter', 'Segoe UI', sans-serif" font-size="25" font-weight="600">EIP-55 case matching</text>
+    <text x="351" y="37" fill="#DBEAFF" font-family="'SF Pro Display', 'Inter', 'Segoe UI', sans-serif" font-size="25" font-weight="600">Prefix + suffix matching</text>
 
     <rect x="662" y="0" width="356" height="58" rx="14" fill="#152741" stroke="#4DDAAD"/>
     <text x="685" y="37" fill="#D6FFF1" font-family="'SF Pro Display', 'Inter', 'Segoe UI', sans-serif" font-size="25" font-weight="600">Private keys stay local</text>
