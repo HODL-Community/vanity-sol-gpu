@@ -1,6 +1,6 @@
 import { bytesToHex, hexToBytes, nowMs } from '../utils/hex'
 import { createKeystoreV3, type KeystoreV3 } from '../wallet/keystoreV3'
-import { pubkeyToAddressBytes } from '../wallet/ethAddress'
+import { checksumAddress, pubkeyToAddressBytes } from '../wallet/ethAddress'
 import { privateKeyToPublicKey64, type PrivKey32 } from '../wallet/keys'
 import { createWorkerPool } from '../worker/pool'
 import { createWasmWorkerPool, type WasmWorkerPool } from '../worker/wasmPool'
@@ -35,8 +35,16 @@ function formatTime(seconds: number): string {
   return `${(seconds / 31536000).toFixed(1)}y`
 }
 
-function calculateDifficulty(prefix: string, suffix: string): number {
-  return Math.pow(16, prefix.length + suffix.length)
+function countLetters(s: string): number {
+  return (s.match(/[a-fA-F]/g) || []).length
+}
+
+function calculateDifficulty(prefix: string, suffix: string, caseSensitive: boolean): number {
+  const base = Math.pow(16, prefix.length + suffix.length)
+  if (!caseSensitive) return base
+  // Case-sensitive mode adds one binary constraint per alpha nibble.
+  const letters = countLetters(prefix) + countLetters(suffix)
+  return base * Math.pow(2, letters)
 }
 
 function estimateTime(difficulty: number, speed: number): string {
@@ -119,6 +127,15 @@ export function initApp(root: HTMLDivElement) {
             </label>
           </div>
         </div>
+        <div class="case-wrap">
+          <div class="target-label">Checksum</div>
+          <div class="case-toggle">
+            <label class="case-option">
+              <input type="checkbox" id="case-sensitive">
+              <span>Case-sensitive</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <button class="btn-generate" id="btn-generate">Generate</button>
@@ -179,6 +196,7 @@ export function initApp(root: HTMLDivElement) {
   const prefixInput = root.querySelector<HTMLInputElement>('#prefix')!
   const suffixInput = root.querySelector<HTMLInputElement>('#suffix')!
   const searchTargetInputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[name="search-target"]'))
+  const caseSensitive = root.querySelector<HTMLInputElement>('#case-sensitive')!
   const previewEl = root.querySelector<HTMLDivElement>('#preview')!
   const previewLabel = root.querySelector<HTMLDivElement>('#preview-label')!
   const previewAddr = root.querySelector<HTMLDivElement>('#preview-addr')!
@@ -241,7 +259,7 @@ export function initApp(root: HTMLDivElement) {
     }
 
     // Update ETA based on difficulty
-    const difficulty = calculateDifficulty(pre, suf)
+    const difficulty = calculateDifficulty(pre, suf, caseSensitive.checked)
     if (runState.status === 'running' && runState.speed > 0) {
       statEta.textContent = estimateTime(difficulty, runState.speed)
     } else if (pre.length + suf.length > 0) {
@@ -258,7 +276,7 @@ export function initApp(root: HTMLDivElement) {
       statChecked.textContent = formatNumber(runState.generated)
       const pre = sanitizeHex(prefixInput.value)
       const suf = sanitizeHex(suffixInput.value)
-      const difficulty = calculateDifficulty(pre, suf)
+      const difficulty = calculateDifficulty(pre, suf, caseSensitive.checked)
       statEta.textContent = estimateTime(difficulty, runState.speed)
     } else if (runState.status === 'found') {
       statChecked.textContent = formatNumber(runState.generated)
@@ -287,6 +305,7 @@ export function initApp(root: HTMLDivElement) {
     prefixInput.disabled = true
     suffixInput.disabled = true
     for (const input of searchTargetInputs) input.disabled = true
+    caseSensitive.disabled = true
 
     const pre = sanitizeHex(prefixInput.value)
     const suf = sanitizeHex(suffixInput.value)
@@ -301,6 +320,7 @@ export function initApp(root: HTMLDivElement) {
       prefixInput.disabled = false
       suffixInput.disabled = false
       for (const input of searchTargetInputs) input.disabled = false
+      caseSensitive.disabled = false
       return
     }
 
@@ -309,6 +329,7 @@ export function initApp(root: HTMLDivElement) {
       prefixInput.disabled = false
       suffixInput.disabled = false
       for (const input of searchTargetInputs) input.disabled = false
+      caseSensitive.disabled = false
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
@@ -453,7 +474,7 @@ export function initApp(root: HTMLDivElement) {
         )
 
         if (result && runState.status === 'running') {
-          const foundAddress = '0x' + result.addressHex.toLowerCase()
+          const foundAddress = checksumAddress(result.addressHex)
           handleFound(result.privHex, foundAddress, pre, suf, target)
         }
 
@@ -499,7 +520,7 @@ export function initApp(root: HTMLDivElement) {
           for (const r of results) {
             totalChecked += r.checked
             if (r.found && runState.status === 'running') {
-              const foundAddress = r.found.address.toLowerCase()
+              const foundAddress = checksumAddress(r.found.address)
               handleFound(r.found.privHex, foundAddress, pre, suf, target)
             }
           }
@@ -542,7 +563,7 @@ export function initApp(root: HTMLDivElement) {
         for (const r of results) {
           totalChecked += r.checked
           if (r.found && runState.status === 'running') {
-            const foundAddress = r.found.address.toLowerCase()
+            const foundAddress = checksumAddress(r.found.address)
             handleFound(r.found.privHex, foundAddress, pre, suf, target)
           }
         }
@@ -569,6 +590,7 @@ export function initApp(root: HTMLDivElement) {
     prefixInput.disabled = false
     suffixInput.disabled = false
     for (const input of searchTargetInputs) input.disabled = false
+    caseSensitive.disabled = false
 
     if (!stopRequested || runState.status === 'running') {
       btnGenerate.textContent = 'Generate'
@@ -582,9 +604,12 @@ export function initApp(root: HTMLDivElement) {
   function handleFound(privHex: string, foundAddress: string, pre: string, suf: string, target: SearchTarget) {
     const preLower = pre.toLowerCase()
     const sufLower = suf.toLowerCase()
-    const addrToCompare = foundAddress.toLowerCase()
-    const prefixOk = addrToCompare.slice(2).startsWith(preLower)
-    const suffixOk = addrToCompare.slice(2).endsWith(sufLower)
+    const addrToCompare = caseSensitive.checked ? foundAddress : foundAddress.toLowerCase()
+
+    const prefixOk = addrToCompare.slice(2).startsWith(preLower) ||
+      (caseSensitive.checked && addrToCompare.slice(2).startsWith(pre))
+    const suffixOk = addrToCompare.slice(2).endsWith(sufLower) ||
+      (caseSensitive.checked && addrToCompare.slice(2).endsWith(suf))
 
     if (prefixOk && suffixOk) {
       const priv = hexToBytes(privHex) as PrivKey32
@@ -635,6 +660,10 @@ export function initApp(root: HTMLDivElement) {
       updatePreview()
     })
   }
+
+  caseSensitive.addEventListener('change', () => {
+    updatePreview()
+  })
 
   btnGenerate.addEventListener('click', () => {
     if (runState.status === 'running') {

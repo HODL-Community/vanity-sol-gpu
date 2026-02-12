@@ -1,4 +1,5 @@
 import { keccak_256 } from '@noble/hashes/sha3.js'
+import { bytesToHex } from '../utils/hex'
 
 const hexTable: string[] = new Array(256)
 for (let i = 0; i < 256; i++) {
@@ -43,4 +44,17 @@ export function firstContractAddressFromWalletAddress(walletAddress: string): st
   const normalized = walletAddress.toLowerCase().replace(/^0x/, '')
   if (normalized.length !== 40) throw new Error('Invalid wallet address length')
   return '0x' + firstContractAddressFromWalletHex(normalized)
+}
+
+export function checksumAddress(address: string): string {
+  const addr = address.toLowerCase().replace(/^0x/, '')
+  if (addr.length !== 40) throw new Error('Invalid address length')
+  const hash = bytesToHex(keccak_256(new TextEncoder().encode(addr)))
+  let out = '0x'
+  for (let i = 0; i < addr.length; i++) {
+    const ch = addr[i]
+    const h = parseInt(hash[i], 16)
+    out += h >= 8 ? ch.toUpperCase() : ch
+  }
+  return out
 }
