@@ -83,10 +83,8 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement) {
 }
 
 export function initApp(root: HTMLDivElement) {
-  const idleSubtitle = 'GPU-first vanity wallet and contract scanner'
   root.innerHTML = `
     <div class="header">
-      <div class="eyebrow">In-browser, local-only key generation</div>
       <div class="logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 2 12 12 22 22 12"/>
@@ -95,7 +93,7 @@ export function initApp(root: HTMLDivElement) {
         </svg>
       </div>
       <div class="title">Vanity ETH GPU</div>
-      <div class="subtitle" id="subtitle">${idleSubtitle}</div>
+      <div class="subtitle" id="subtitle">Fast vanity address generator</div>
     </div>
 
     <div class="panel">
@@ -117,11 +115,17 @@ export function initApp(root: HTMLDivElement) {
 
       <div class="options">
         <div class="target-wrap">
-          <label for="search-target">Target</label>
-          <select id="search-target">
-            <option value="wallet">Wallet address</option>
-            <option value="first-contract">First contract address (nonce 0)</option>
-          </select>
+          <div class="target-label">Target</div>
+          <div class="target-toggle" role="radiogroup" aria-label="Search target">
+            <label class="target-option">
+              <input type="radio" name="search-target" value="wallet" checked>
+              <span>Wallet</span>
+            </label>
+            <label class="target-option">
+              <input type="radio" name="search-target" value="first-contract">
+              <span>First Contract</span>
+            </label>
+          </div>
         </div>
         <label class="checkbox-wrap">
           <input type="checkbox" id="case-sensitive">
@@ -186,7 +190,7 @@ export function initApp(root: HTMLDivElement) {
   // Elements
   const prefixInput = root.querySelector<HTMLInputElement>('#prefix')!
   const suffixInput = root.querySelector<HTMLInputElement>('#suffix')!
-  const searchTargetSelect = root.querySelector<HTMLSelectElement>('#search-target')!
+  const searchTargetInputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[name="search-target"]'))
   const caseSensitive = root.querySelector<HTMLInputElement>('#case-sensitive')!
   const previewEl = root.querySelector<HTMLDivElement>('#preview')!
   const previewLabel = root.querySelector<HTMLDivElement>('#preview-label')!
@@ -224,7 +228,8 @@ export function initApp(root: HTMLDivElement) {
   }
 
   function selectedTarget(): SearchTarget {
-    return searchTargetSelect.value === 'first-contract' ? 'first-contract' : 'wallet'
+    const checked = searchTargetInputs.find(input => input.checked)
+    return checked?.value === 'first-contract' ? 'first-contract' : 'wallet'
   }
 
   function updateTargetLabels() {
@@ -294,7 +299,7 @@ export function initApp(root: HTMLDivElement) {
     // Disable inputs while running
     prefixInput.disabled = true
     suffixInput.disabled = true
-    searchTargetSelect.disabled = true
+    for (const input of searchTargetInputs) input.disabled = true
     caseSensitive.disabled = true
 
     const pre = sanitizeHex(prefixInput.value)
@@ -309,7 +314,7 @@ export function initApp(root: HTMLDivElement) {
       previewEl.classList.remove('generating')
       prefixInput.disabled = false
       suffixInput.disabled = false
-      searchTargetSelect.disabled = false
+      for (const input of searchTargetInputs) input.disabled = false
       caseSensitive.disabled = false
       return
     }
@@ -318,12 +323,12 @@ export function initApp(root: HTMLDivElement) {
     function resetUI() {
       prefixInput.disabled = false
       suffixInput.disabled = false
-      searchTargetSelect.disabled = false
+      for (const input of searchTargetInputs) input.disabled = false
       caseSensitive.disabled = false
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
-      subtitleEl.textContent = idleSubtitle
+      subtitleEl.textContent = 'Fast vanity address generator'
       runState = { status: 'idle' }
     }
 
@@ -579,14 +584,14 @@ export function initApp(root: HTMLDivElement) {
     // Re-enable inputs
     prefixInput.disabled = false
     suffixInput.disabled = false
-    searchTargetSelect.disabled = false
+    for (const input of searchTargetInputs) input.disabled = false
     caseSensitive.disabled = false
 
     if (!stopRequested || runState.status === 'running') {
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
-      subtitleEl.textContent = idleSubtitle
+      subtitleEl.textContent = 'Fast vanity address generator'
       runState = { status: 'idle' }
     }
   }
@@ -645,9 +650,11 @@ export function initApp(root: HTMLDivElement) {
     updatePreview()
   })
 
-  searchTargetSelect.addEventListener('change', () => {
-    updatePreview()
-  })
+  for (const input of searchTargetInputs) {
+    input.addEventListener('change', () => {
+      updatePreview()
+    })
+  }
 
   caseSensitive.addEventListener('change', () => {
     updatePreview()
