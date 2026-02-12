@@ -127,10 +127,15 @@ export function initApp(root: HTMLDivElement) {
             </label>
           </div>
         </div>
-        <label class="checkbox-wrap">
-          <input type="checkbox" id="case-sensitive">
-          <span>Case-sensitive (EIP-55)</span>
-        </label>
+        <div class="case-wrap">
+          <div class="target-label">Checksum</div>
+          <div class="case-toggle">
+            <label class="case-option">
+              <input type="checkbox" id="case-sensitive">
+              <span>Case-sensitive (EIP-55)</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <button class="btn-generate" id="btn-generate">Generate</button>
