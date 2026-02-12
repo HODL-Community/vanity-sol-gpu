@@ -22,6 +22,13 @@ type RunState =
 const PREVIEW_LENGTH = 44
 let cachedBackend: Backend | null = null
 
+function forcedBackendFromEnv(): Backend | null {
+  const value = import.meta.env.VITE_FORCE_BACKEND?.trim().toLowerCase()
+  if (value === 'gpu') return 'gpu'
+  if (value === 'cpu') return 'cpu'
+  return null
+}
+
 function formatNumber(n: number): string {
   if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T'
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
@@ -511,13 +518,14 @@ export function initApp(root: HTMLDivElement) {
 
     const pool = createWorkerPool()
     let gpuMatcher: GpuMatcher | null = null
-    let backend: Backend = cachedBackend ?? 'cpu'
+    const forcedBackend = forcedBackendFromEnv()
+    let backend: Backend = forcedBackend ?? cachedBackend ?? 'cpu'
 
     const startedAtMs = nowMs()
     runState = { status: 'running', startedAtMs, generated: 0, speed: 0 }
 
     try {
-      if (cachedBackend === null) {
+      if (!forcedBackend && cachedBackend === null) {
         const benchmark = await benchmarkBackend(pool)
         backend = benchmark.backend
         gpuMatcher = benchmark.gpuMatcher
@@ -530,7 +538,7 @@ export function initApp(root: HTMLDivElement) {
           gpuMatcher = await createGpuMatcher()
         } catch {
           backend = 'cpu'
-          cachedBackend = 'cpu'
+          if (!forcedBackend) cachedBackend = 'cpu'
           subtitleEl.textContent = 'GPU unavailable, falling back to CPU'
           await new Promise(resolve => setTimeout(resolve, 1000))
         }

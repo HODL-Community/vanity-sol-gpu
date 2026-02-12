@@ -25,3 +25,11 @@
 - Mistake: I assumed typed-array buffers would satisfy `ArrayBuffer` transfer typings, but under strict TS they were inferred as `ArrayBufferLike`, causing compile errors in worker postMessage and `queue.writeBuffer`.
 - Avoid: Validate transfer/buffer boundaries early for worker/GPU code; normalize with explicit `Uint8Array#slice()` copies when strict buffer types are required.
 - Cleanup: Send typed arrays directly through worker messages (or copy into concrete `ArrayBuffer`), and pass a concrete copy into `queue.writeBuffer` before building.
+
+- Mistake: I ran `mkdir -p tests/...` without setting the repo `workdir`, so the folders were created outside the project context.
+- Avoid: Always include `workdir` on filesystem mutations, even for simple directory creation commands.
+- Cleanup: Re-run directory creation with the correct repo `workdir` and verify with `pwd` + `ls`.
+
+- Mistake: I assumed the local Playwright skill wrapper command (`playwright-cli`) was still available from `@playwright/mcp`; current package exposes `playwright-mcp` instead.
+- Avoid: Verify CLI binary names with `npm pkg get bin` (or inspect installed package metadata) before scripting around a wrapper.
+- Cleanup: Use a fallback test strategy (`@playwright/test`) when wrapper tooling is not operational in the environment, and document the discrepancy.

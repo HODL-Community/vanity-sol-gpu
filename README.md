@@ -39,7 +39,23 @@ npm run dev
 
 # Build for production
 npm run build
+
+# Run unit tests
+npm run test:unit
+
+# Run browser E2E tests
+npm run test:e2e
+
+# Run full quality gate (build + unit + e2e)
+npm run check
 ```
+
+## Testing
+
+- Unit tests use `vitest` and cover core Base58/keys logic.
+- E2E tests use `@playwright/test` and exercise real UI flows in Chromium.
+- CI runs `build`, `test:unit`, and `test:e2e` on every push/PR.
+- For deterministic test runs, the dev server is started with `VITE_FORCE_BACKEND=cpu`.
 
 ## Tech Stack
 
@@ -53,6 +69,7 @@ npm run build
 
 - Runtime auto-benchmarks GPU hybrid mode vs CPU mode and picks the faster backend.
 - If WebGPU is unavailable, the app falls back to CPU-only search.
+- You can force a backend for troubleshooting with `VITE_FORCE_BACKEND=cpu` or `VITE_FORCE_BACKEND=gpu`.
 
 ## License
 
