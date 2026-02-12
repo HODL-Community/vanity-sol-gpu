@@ -83,8 +83,10 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement) {
 }
 
 export function initApp(root: HTMLDivElement) {
+  const idleSubtitle = 'GPU-first vanity wallet and contract scanner'
   root.innerHTML = `
     <div class="header">
+      <div class="eyebrow">In-browser, local-only key generation</div>
       <div class="logo">
         <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 2 12 12 22 22 12"/>
@@ -93,7 +95,7 @@ export function initApp(root: HTMLDivElement) {
         </svg>
       </div>
       <div class="title">Vanity ETH GPU</div>
-      <div class="subtitle" id="subtitle">Fast vanity address generator</div>
+      <div class="subtitle" id="subtitle">${idleSubtitle}</div>
     </div>
 
     <div class="panel">
@@ -321,7 +323,7 @@ export function initApp(root: HTMLDivElement) {
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
-      subtitleEl.textContent = 'Fast vanity address generator'
+      subtitleEl.textContent = idleSubtitle
       runState = { status: 'idle' }
     }
 
@@ -584,7 +586,7 @@ export function initApp(root: HTMLDivElement) {
       btnGenerate.textContent = 'Generate'
       btnGenerate.classList.remove('running')
       previewEl.classList.remove('generating')
-      subtitleEl.textContent = 'Fast vanity address generator'
+      subtitleEl.textContent = idleSubtitle
       runState = { status: 'idle' }
     }
   }
