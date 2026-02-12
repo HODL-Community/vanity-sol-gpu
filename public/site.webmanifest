@@ -1,0 +1,22 @@
+{
+  "name": "Vanity ETH GPU",
+  "short_name": "Vanity ETH",
+  "description": "Fast in-browser Ethereum vanity wallet and first contract address generator with GPU acceleration.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#07080c",
+  "theme_color": "#0b0c12",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -2,11 +2,97 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Generate custom Ethereum vanity addresses with WebGPU acceleration. Fast, secure, client-side only." />
+    <title>Vanity ETH GPU | Vanity Wallet & First Contract Address Generator</title>
+
+    <meta
+      name="description"
+      content="Generate Ethereum vanity wallet addresses and first contract deploy addresses (CREATE nonce 0) directly in your browser with WebGPU, WASM, and CPU fallback."
+    />
+    <meta
+      name="keywords"
+      content="ethereum vanity address, ethereum address generator, vanity wallet, first contract address, webgpu ethereum, create nonce 0, eip-55"
+    />
+    <meta name="author" content="HODL Community" />
+    <meta name="application-name" content="Vanity ETH GPU" />
+    <meta name="apple-mobile-web-app-title" content="Vanity ETH GPU" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="theme-color" content="#0b0c12" />
-    <title>Vanity ETH GPU - WebGPU Address Generator</title>
+
+    <link rel="canonical" href="https://hodl-community.github.io/vanity-eth-gpu/" />
+    <link rel="alternate" href="https://hodl-community.github.io/vanity-eth-gpu/" hreflang="en" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Vanity ETH GPU" />
+    <meta property="og:url" content="https://hodl-community.github.io/vanity-eth-gpu/" />
+    <meta property="og:title" content="Vanity ETH GPU | Vanity Wallet & First Contract Address Generator" />
+    <meta
+      property="og:description"
+      content="Generate Ethereum vanity wallet addresses and first contract deploy addresses in-browser with GPU acceleration."
+    />
+    <meta property="og:image" content="https://hodl-community.github.io/vanity-eth-gpu/og-image.png" />
+    <meta property="og:image:secure_url" content="https://hodl-community.github.io/vanity-eth-gpu/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Vanity ETH GPU: Ethereum vanity wallet and first-contract address generator."
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vanity ETH GPU | Vanity Wallet & First Contract Address Generator" />
+    <meta
+      name="twitter:description"
+      content="GPU-accelerated in-browser Ethereum vanity scanner for wallets and first contract deploy addresses."
+    />
+    <meta name="twitter:image" content="https://hodl-community.github.io/vanity-eth-gpu/twitter-card.png" />
+    <meta name="twitter:image:alt" content="Vanity ETH GPU social card showing wallet and first-contract matching." />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "name": "Vanity ETH GPU",
+            "url": "https://hodl-community.github.io/vanity-eth-gpu/",
+            "inLanguage": "en-US",
+            "description": "A privacy-first in-browser Ethereum vanity address generator with GPU acceleration."
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Vanity ETH GPU",
+            "applicationCategory": "SecurityApplication",
+            "operatingSystem": "Web",
+            "url": "https://hodl-community.github.io/vanity-eth-gpu/",
+            "image": "https://hodl-community.github.io/vanity-eth-gpu/og-image.png",
+            "inLanguage": "en-US",
+            "description": "Generate vanity Ethereum wallet and first-contract addresses with local-only key generation and WebGPU acceleration.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "featureList": [
+              "Wallet vanity address scanning",
+              "First contract deploy address scanning (CREATE nonce 0)",
+              "Case-sensitive EIP-55 matching",
+              "Local-only private key generation",
+              "Encrypted keystore export"
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
