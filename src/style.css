@@ -173,10 +173,10 @@ input:disabled {
 
 /* Options row */
 .options {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
   margin-bottom: 20px;
   padding: 12px 14px;
   background: var(--bg-card);
@@ -188,14 +188,14 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 220px;
+  min-width: 0;
 }
 
 .case-wrap {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 220px;
+  min-width: 0;
 }
 
 .target-label {
@@ -620,8 +620,7 @@ input:disabled {
   }
 
   .options {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: 1fr;
   }
 
   .target-wrap {
