@@ -6,3 +6,6 @@
 - Avoid: When adding a worktree, run `git worktree add ../<name> -b codex/<branch>` and verify with `git worktree list` immediately.
 - Cleanup: If the nested worktree is not desired, remove it with `git worktree remove vanity-eth-gpu-contract` from the main repo root.
 
+- Mistake: I used backticks directly inside a double-quoted `gh pr create --body "..."` shell string, which triggered command substitution (`command not found`) and produced a malformed PR body.
+- Avoid: Use a single-quoted heredoc (`cat <<'EOF'`) or escape backticks when passing markdown through shell flags.
+- Cleanup: Immediately correct the PR description with `gh pr edit --body-file <file>`.
