@@ -1,4 +1,5 @@
 import VanityWorker from './vanityWorker?worker'
+import type { SearchTarget } from '../searchTarget'
 
 type SearchResult = {
   checked: number
@@ -10,7 +11,7 @@ type PendingTask = {
 }
 
 export type WorkerPool = {
-  search(prefixLower: string, suffixLower: string, batchSize: number): Promise<SearchResult>
+  search(prefixLower: string, suffixLower: string, batchSize: number, target: SearchTarget): Promise<SearchResult>
   destroy(): void
   workerCount: number
 }
@@ -37,7 +38,7 @@ export function createWorkerPool(): WorkerPool {
 
   let workerIndex = 0
 
-  function search(prefixLower: string, suffixLower: string, batchSize: number): Promise<SearchResult> {
+  function search(prefixLower: string, suffixLower: string, batchSize: number, target: SearchTarget): Promise<SearchResult> {
     if (destroyed) return Promise.reject(new Error('Pool destroyed'))
 
     return new Promise((resolve) => {
@@ -52,7 +53,8 @@ export function createWorkerPool(): WorkerPool {
         id,
         batchSize,
         prefixLower,
-        suffixLower
+        suffixLower,
+        target
       })
     })
   }

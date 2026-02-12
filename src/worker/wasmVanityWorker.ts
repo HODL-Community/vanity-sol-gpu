@@ -5,6 +5,8 @@ import {
   privateAdd
 } from 'tiny-secp256k1'
 import { keccak_256 } from '@noble/hashes/sha3.js'
+import { firstContractAddressFromWalletHex } from '../wallet/ethAddress'
+import type { SearchTarget } from '../searchTarget'
 
 /**
  * WASM-accelerated vanity address worker.
@@ -19,7 +21,7 @@ import { keccak_256 } from '@noble/hashes/sha3.js'
 
 type WorkerMessage =
   | { type: 'init' }
-  | { type: 'search'; id: number; batchSize: number; prefixLower: string; suffixLower: string }
+  | { type: 'search'; id: number; batchSize: number; prefixLower: string; suffixLower: string; target: SearchTarget }
 
 type WorkerResult =
   | { type: 'ready' }
@@ -83,6 +85,7 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
   if (msg.type !== 'search' || !initialized) return
 
   const { id, batchSize, prefixLower, suffixLower } = msg
+  const searchTarget: SearchTarget = msg.target === 'first-contract' ? 'first-contract' : 'wallet'
 
   let privKey = generateRandomKey()
   let pubKey = pointFromScalar(privKey, false)
@@ -93,18 +96,24 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
 
   for (let i = 0; i < batchSize; i++) {
     const pub64 = pubKey.subarray(1)
-    const addr = pubkeyToAddress(pub64)
+    const walletAddr = pubkeyToAddress(pub64)
+    const targetAddr = searchTarget === 'first-contract'
+      ? firstContractAddressFromWalletHex(walletAddr)
+      : walletAddr
 
-    if (addr.startsWith(prefixLower) && addr.endsWith(suffixLower)) {
+    if (targetAddr.startsWith(prefixLower) && targetAddr.endsWith(suffixLower)) {
       const verifyPub = pointFromScalar(privKey, false)
       if (verifyPub) {
-        const verifyAddr = pubkeyToAddress(verifyPub.subarray(1))
-        if (verifyAddr === addr) {
+        const verifyWalletAddr = pubkeyToAddress(verifyPub.subarray(1))
+        const verifyTargetAddr = searchTarget === 'first-contract'
+          ? firstContractAddressFromWalletHex(verifyWalletAddr)
+          : verifyWalletAddr
+        if (verifyTargetAddr === targetAddr) {
           const result: WorkerResult = {
             type: 'result',
             id,
             checked: i + 1,
-            found: { privHex: bytesToHex(privKey), address: '0x' + addr }
+            found: { privHex: bytesToHex(privKey), address: '0x' + targetAddr }
           }
           self.postMessage(result)
           return

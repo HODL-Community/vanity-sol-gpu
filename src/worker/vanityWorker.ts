@@ -1,5 +1,7 @@
 import { Point, utils, getPublicKey } from '@noble/secp256k1'
 import { keccak_256 } from '@noble/hashes/sha3.js'
+import { firstContractAddressFromWalletHex } from '../wallet/ethAddress'
+import type { SearchTarget } from '../searchTarget'
 
 /**
  * SECURITY MODEL:
@@ -20,6 +22,7 @@ type WorkerMessage = {
   batchSize: number
   prefixLower: string
   suffixLower: string
+  target: SearchTarget
 }
 
 type WorkerResult = {
@@ -63,9 +66,10 @@ function bigIntToBytes(n: bigint): Uint8Array {
 }
 
 self.onmessage = (e: MessageEvent<WorkerMessage>) => {
-  const { type, id, batchSize, prefixLower, suffixLower } = e.data
+  const { type, id, batchSize, prefixLower, suffixLower, target } = e.data
 
   if (type !== 'search') return
+  const searchTarget: SearchTarget = target === 'first-contract' ? 'first-contract' : 'wallet'
 
   // Generate random starting private key using CSPRNG
   const privBytes = utils.randomSecretKey()
@@ -78,15 +82,21 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
     // Convert point to uncompressed public key (64 bytes, no prefix)
     const pubRaw = pubPoint.toBytes(false)
     const pub64 = pubRaw.slice(1)
-    const addr = pubkeyToAddress(pub64)
+    const walletAddr = pubkeyToAddress(pub64)
+    const targetAddr = searchTarget === 'first-contract'
+      ? firstContractAddressFromWalletHex(walletAddr)
+      : walletAddr
 
-    if (addr.startsWith(prefixLower) && addr.endsWith(suffixLower)) {
+    if (targetAddr.startsWith(prefixLower) && targetAddr.endsWith(suffixLower)) {
       // SECURITY: Re-verify the key before returning
       // Recompute public key from private key to ensure correctness
       const verifyPub = getPublicKey(bigIntToBytes(privKey), false)
-      const verifyAddr = pubkeyToAddress(verifyPub.slice(1))
+      const verifyWalletAddr = pubkeyToAddress(verifyPub.slice(1))
+      const verifyTargetAddr = searchTarget === 'first-contract'
+        ? firstContractAddressFromWalletHex(verifyWalletAddr)
+        : verifyWalletAddr
 
-      if (verifyAddr !== addr) {
+      if (verifyTargetAddr !== targetAddr) {
         // Should never happen - indicates a bug
         console.error('Key verification failed!')
         continue
@@ -96,7 +106,7 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
         type: 'result',
         id,
         checked: i + 1,
-        found: { privHex: bigIntToHex(privKey), address: '0x' + addr }
+        found: { privHex: bigIntToHex(privKey), address: '0x' + targetAddr }
       }
       self.postMessage(result)
       return

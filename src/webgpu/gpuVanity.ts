@@ -6,7 +6,7 @@ export type GpuVanityResult = {
 }
 
 export type GpuVanity = {
-  search(prefixNibbles: number[], suffixNibbles: number[], batchSize: number): Promise<GpuVanityResult | null>
+  search(prefixNibbles: number[], suffixNibbles: number[], batchSize: number, searchMode: number): Promise<GpuVanityResult | null>
   destroy(): void
 }
 
@@ -92,7 +92,8 @@ export async function createGpuVanity(): Promise<GpuVanity> {
   async function search(
     prefixNibbles: number[],
     suffixNibbles: number[],
-    batchSize: number
+    batchSize: number,
+    searchMode: number
   ): Promise<GpuVanityResult | null> {
     if (destroyed) throw new Error('GPU vanity destroyed')
     if (batchSize > MAX_BATCH_SIZE) batchSize = MAX_BATCH_SIZE
@@ -110,7 +111,7 @@ export async function createGpuVanity(): Promise<GpuVanity> {
     params[0] = batchSize
     params[1] = prefixNibbles.length
     params[2] = suffixNibbles.length
-    params[3] = 0
+    params[3] = searchMode
     for (let i = 0; i < prefixNibbles.length; i++) params[4 + i] = prefixNibbles[i]
     for (let i = 0; i < suffixNibbles.length; i++) params[44 + i] = suffixNibbles[i]
     device.queue.writeBuffer(paramsBuffer, 0, params)

@@ -184,6 +184,43 @@ input:disabled {
   border-radius: var(--radius-sm);
 }
 
+.target-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.target-wrap label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.target-wrap select {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.target-wrap select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.target-wrap select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .checkbox-wrap {
   display: flex;
   align-items: center;
@@ -298,6 +335,10 @@ input:disabled {
 
 .result-row:last-child {
   margin-bottom: 0;
+}
+
+.result-row.hidden {
+  display: none;
 }
 
 .result-label {
@@ -506,6 +547,11 @@ input:disabled {
   .options {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .target-wrap {
+    width: 100%;
+    min-width: 0;
   }
 
   .actions {
