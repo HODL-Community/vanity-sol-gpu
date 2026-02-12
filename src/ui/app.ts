@@ -1,14 +1,18 @@
-import { hexToBytes, nowMs } from '../utils/hex'
+import { bytesToHex, hexToBytes, nowMs } from '../utils/hex'
 import { type SearchTarget } from '../searchTarget'
-import { createWorkerPool } from '../worker/pool'
+import { createWorkerPool, type WorkerPool } from '../worker/pool'
+import { createGpuMatcher, type GpuMatcher } from '../webgpu/gpuMatcher'
 import { keypairArrayFromPriv, secretKeyBase58FromPriv } from '../wallet/keypairJson'
 import { type PrivKey32 } from '../wallet/keys'
 import {
   BASE58_ALPHABET,
+  bytesToBase58,
   hasCaseInsensitiveVariant,
   matchesVanityTarget,
   sanitizeBase58Input,
 } from '../wallet/solanaAddress'
+
+type Backend = 'gpu' | 'cpu'
 
 type RunState =
   | { status: 'idle' }
@@ -16,6 +20,7 @@ type RunState =
   | { status: 'found'; generated: number; time: number; foundPriv: PrivKey32; foundAddress: string }
 
 const PREVIEW_LENGTH = 44
+let cachedBackend: Backend | null = null
 
 function formatNumber(n: number): string {
   if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T'
@@ -296,6 +301,190 @@ export function initApp(root: HTMLDivElement) {
     }
   }
 
+  async function benchmarkBackend(pool: WorkerPool): Promise<{ backend: Backend; gpuMatcher: GpuMatcher | null }> {
+    if (cachedBackend === 'cpu') {
+      return { backend: 'cpu', gpuMatcher: null }
+    }
+
+    let gpuMatcher: GpuMatcher | null = null
+    try {
+      gpuMatcher = await createGpuMatcher()
+    } catch {
+      cachedBackend = 'cpu'
+      return { backend: 'cpu', gpuMatcher: null }
+    }
+
+    const BENCH_DURATION_MS = 1200
+    const BENCH_BATCH_SIZE = 1024
+    const impossiblePrefix = 'zzzzzzzzzzzzzz'
+    const impossibleSuffix = 'zzzzzzzzzz'
+
+    let gpuChecked = 0
+    subtitleEl.textContent = 'Benchmarking GPU...'
+    const gpuStart = nowMs()
+
+    while (nowMs() - gpuStart < BENCH_DURATION_MS && !stopRequested) {
+      const batches = []
+      for (let i = 0; i < pool.workerCount; i++) {
+        batches.push(pool.generate(BENCH_BATCH_SIZE))
+      }
+
+      const generated = await Promise.all(batches)
+
+      for (const batch of generated) {
+        await gpuMatcher.findMatchIndex(batch.pubKeys, batch.checked, impossiblePrefix, impossibleSuffix, true)
+        gpuChecked += batch.checked
+      }
+    }
+
+    if (stopRequested) {
+      gpuMatcher.destroy()
+      return { backend: 'cpu', gpuMatcher: null }
+    }
+
+    let cpuChecked = 0
+    subtitleEl.textContent = 'Benchmarking CPU...'
+    const cpuStart = nowMs()
+
+    while (nowMs() - cpuStart < BENCH_DURATION_MS && !stopRequested) {
+      const searches = []
+      for (let i = 0; i < pool.workerCount; i++) {
+        searches.push(pool.search(impossiblePrefix, impossibleSuffix, BENCH_BATCH_SIZE, 'wallet', true))
+      }
+
+      const results = await Promise.all(searches)
+      for (const result of results) cpuChecked += result.checked
+    }
+
+    if (stopRequested) {
+      gpuMatcher.destroy()
+      return { backend: 'cpu', gpuMatcher: null }
+    }
+
+    const gpuSpeed = gpuChecked / Math.max((nowMs() - gpuStart) / 1000, 0.001)
+    const cpuSpeed = cpuChecked / Math.max((nowMs() - cpuStart) / 1000, 0.001)
+
+    const winner: Backend = gpuSpeed > cpuSpeed ? 'gpu' : 'cpu'
+    cachedBackend = winner
+
+    if (winner === 'cpu') {
+      gpuMatcher.destroy()
+      subtitleEl.textContent = `GPU: ${formatNumber(Math.round(gpuSpeed))}/s | CPU: ${formatNumber(Math.round(cpuSpeed))}/s → Using CPU`
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      return { backend: 'cpu', gpuMatcher: null }
+    }
+
+    subtitleEl.textContent = `GPU: ${formatNumber(Math.round(gpuSpeed))}/s | CPU: ${formatNumber(Math.round(cpuSpeed))}/s → Using GPU`
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    return { backend: 'gpu', gpuMatcher }
+  }
+
+  async function runCpuBackend(
+    pool: WorkerPool,
+    prefix: string,
+    suffix: string,
+    target: SearchTarget,
+    caseSensitive: boolean
+  ) {
+    const batchPerWorker = 2048
+    subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
+
+    let recentGenerated = 0
+    let recentStartMs = nowMs()
+
+    while (!stopRequested && runState.status === 'running') {
+      const searches = []
+      for (let i = 0; i < pool.workerCount; i++) {
+        searches.push(pool.search(prefix, suffix, batchPerWorker, target, caseSensitive))
+      }
+
+      const results = await Promise.all(searches)
+      let totalChecked = 0
+
+      for (const result of results) {
+        totalChecked += result.checked
+        if (result.found && runState.status === 'running') {
+          handleFound(result.found.privHex, result.found.address, prefix, suffix, target, caseSensitive)
+        }
+      }
+
+      if (runState.status === 'running') {
+        runState = { ...runState, generated: runState.generated + totalChecked }
+      }
+      recentGenerated += totalChecked
+
+      const elapsed = nowMs() - recentStartMs
+      if (elapsed >= 500 && runState.status === 'running') {
+        const speed = Math.floor(recentGenerated / (elapsed / 1000))
+        runState = { ...runState, speed }
+        recentGenerated = 0
+        recentStartMs = nowMs()
+        updateStats()
+      }
+    }
+  }
+
+  async function runGpuBackend(
+    pool: WorkerPool,
+    gpuMatcher: GpuMatcher,
+    prefix: string,
+    suffix: string,
+    target: SearchTarget,
+    caseSensitive: boolean
+  ) {
+    const batchPerWorker = 1024
+    subtitleEl.textContent = `Running on GPU + CPU keygen (${pool.workerCount} workers)`
+
+    let recentGenerated = 0
+    let recentStartMs = nowMs()
+
+    while (!stopRequested && runState.status === 'running') {
+      const generatedBatches = []
+      for (let i = 0; i < pool.workerCount; i++) {
+        generatedBatches.push(pool.generate(batchPerWorker))
+      }
+
+      const batches = await Promise.all(generatedBatches)
+      let totalChecked = 0
+
+      for (const batch of batches) {
+        totalChecked += batch.checked
+
+        if (runState.status !== 'running') break
+
+        const matchIndex = await gpuMatcher.findMatchIndex(
+          batch.pubKeys,
+          batch.checked,
+          prefix,
+          suffix,
+          caseSensitive,
+        )
+
+        if (matchIndex === null || runState.status !== 'running') continue
+
+        const privOffset = matchIndex * 32
+        const priv = batch.privKeys.subarray(privOffset, privOffset + 32)
+        const pub = batch.pubKeys.subarray(privOffset, privOffset + 32)
+
+        handleFound(bytesToHex(priv), bytesToBase58(pub), prefix, suffix, target, caseSensitive)
+      }
+
+      if (runState.status === 'running') {
+        runState = { ...runState, generated: runState.generated + totalChecked }
+      }
+      recentGenerated += totalChecked
+
+      const elapsed = nowMs() - recentStartMs
+      if (elapsed >= 500 && runState.status === 'running') {
+        const speed = Math.floor(recentGenerated / (elapsed / 1000))
+        runState = { ...runState, speed }
+        recentGenerated = 0
+        recentStartMs = nowMs()
+        updateStats()
+      }
+    }
+  }
+
   async function run() {
     stopRequested = false
     btnGenerate.textContent = 'Stop'
@@ -321,47 +510,41 @@ export function initApp(root: HTMLDivElement) {
     }
 
     const pool = createWorkerPool()
-    const batchPerWorker = 2048
+    let gpuMatcher: GpuMatcher | null = null
+    let backend: Backend = cachedBackend ?? 'cpu'
+
     const startedAtMs = nowMs()
     runState = { status: 'running', startedAtMs, generated: 0, speed: 0 }
-    subtitleEl.textContent = `Running on CPU (${pool.workerCount} workers)`
-
-    let recentGenerated = 0
-    let recentStartMs = nowMs()
 
     try {
-      while (!stopRequested && runState.status === 'running') {
-        const searches = []
-        for (let i = 0; i < pool.workerCount; i++) {
-          searches.push(pool.search(prefix, suffix, batchPerWorker, target, caseSensitive))
-        }
+      if (cachedBackend === null) {
+        const benchmark = await benchmarkBackend(pool)
+        backend = benchmark.backend
+        gpuMatcher = benchmark.gpuMatcher
+      }
 
-        const results = await Promise.all(searches)
-        let totalChecked = 0
+      if (stopRequested || runState.status !== 'running') return
 
-        for (const result of results) {
-          totalChecked += result.checked
-          if (result.found && runState.status === 'running') {
-            handleFound(result.found.privHex, result.found.address, prefix, suffix, target, caseSensitive)
-          }
+      if (backend === 'gpu' && !gpuMatcher) {
+        try {
+          gpuMatcher = await createGpuMatcher()
+        } catch {
+          backend = 'cpu'
+          cachedBackend = 'cpu'
+          subtitleEl.textContent = 'GPU unavailable, falling back to CPU'
+          await new Promise(resolve => setTimeout(resolve, 1000))
         }
+      }
 
-        if (runState.status === 'running') {
-          runState = { ...runState, generated: runState.generated + totalChecked }
-        }
-        recentGenerated += totalChecked
-
-        const elapsed = nowMs() - recentStartMs
-        if (elapsed >= 500 && runState.status === 'running') {
-          const speed = Math.floor(recentGenerated / (elapsed / 1000))
-          runState = { ...runState, speed }
-          recentGenerated = 0
-          recentStartMs = nowMs()
-          updateStats()
-        }
+      if (backend === 'gpu' && gpuMatcher) {
+        await runGpuBackend(pool, gpuMatcher, prefix, suffix, target, caseSensitive)
+      } else {
+        await runCpuBackend(pool, prefix, suffix, target, caseSensitive)
       }
     } finally {
       pool.destroy()
+      gpuMatcher?.destroy()
+
       setInputsDisabled(false, prefixInput, suffixInput, searchTargetInputs, caseSensitiveInput)
 
       const finalStatus = (runState as RunState).status
@@ -473,5 +656,4 @@ export function initApp(root: HTMLDivElement) {
   })
 
   updatePreview()
-
 }

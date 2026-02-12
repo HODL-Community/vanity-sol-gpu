@@ -6,9 +6,19 @@ type SearchResult = {
   found: { privHex: string; address: string } | null
 }
 
-type PendingTask = {
-  resolve: (result: SearchResult) => void
+type GeneratedBatch = {
+  checked: number
+  privKeys: Uint8Array
+  pubKeys: Uint8Array
 }
+
+type PendingTask =
+  | { kind: 'search'; resolve: (result: SearchResult) => void }
+  | { kind: 'generate'; resolve: (result: GeneratedBatch) => void }
+
+type WorkerMessage =
+  | { type: 'result'; id: number; checked: number; found: { privHex: string; address: string } | null }
+  | { type: 'batch'; id: number; checked: number; privKeys: Uint8Array; pubKeys: Uint8Array }
 
 export type WorkerPool = {
   search(
@@ -18,6 +28,7 @@ export type WorkerPool = {
     target: SearchTarget,
     caseSensitive: boolean
   ): Promise<SearchResult>
+  generate(batchSize: number): Promise<GeneratedBatch>
   destroy(): void
   workerCount: number
 }
@@ -31,18 +42,36 @@ export function createWorkerPool(): WorkerPool {
 
   for (let i = 0; i < workerCount; i++) {
     const worker = new VanityWorker()
-    worker.onmessage = (e) => {
-      const { id, checked, found } = e.data
-      const task = pending.get(id)
-      if (task) {
-        pending.delete(id)
-        task.resolve({ checked, found })
+    worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
+      const message = e.data
+      const task = pending.get(message.id)
+      if (!task) return
+
+      pending.delete(message.id)
+
+      if (message.type === 'result' && task.kind === 'search') {
+        task.resolve({ checked: message.checked, found: message.found })
+        return
+      }
+
+      if (message.type === 'batch' && task.kind === 'generate') {
+        task.resolve({
+          checked: message.checked,
+          privKeys: message.privKeys,
+          pubKeys: message.pubKeys,
+        })
       }
     }
     workers.push(worker)
   }
 
   let workerIndex = 0
+
+  function nextWorker(): Worker {
+    const worker = workers[workerIndex]
+    workerIndex = (workerIndex + 1) % workerCount
+    return worker
+  }
 
   function search(
     prefix: string,
@@ -55,12 +84,9 @@ export function createWorkerPool(): WorkerPool {
 
     return new Promise((resolve) => {
       const id = nextId++
-      pending.set(id, { resolve })
+      pending.set(id, { kind: 'search', resolve })
 
-      const worker = workers[workerIndex]
-      workerIndex = (workerIndex + 1) % workerCount
-
-      worker.postMessage({
+      nextWorker().postMessage({
         type: 'search',
         id,
         batchSize,
@@ -72,6 +98,21 @@ export function createWorkerPool(): WorkerPool {
     })
   }
 
+  function generate(batchSize: number): Promise<GeneratedBatch> {
+    if (destroyed) return Promise.reject(new Error('Pool destroyed'))
+
+    return new Promise((resolve) => {
+      const id = nextId++
+      pending.set(id, { kind: 'generate', resolve })
+
+      nextWorker().postMessage({
+        type: 'generate',
+        id,
+        batchSize,
+      })
+    })
+  }
+
   function destroy() {
     destroyed = true
     workers.forEach(w => w.terminate())
@@ -79,5 +120,5 @@ export function createWorkerPool(): WorkerPool {
     pending.clear()
   }
 
-  return { search, destroy, workerCount }
+  return { search, generate, destroy, workerCount }
 }

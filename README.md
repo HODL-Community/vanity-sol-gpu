@@ -5,6 +5,7 @@ A fast Solana vanity address generator that runs entirely in your browser.
 ## Features
 
 - **Multi-threaded** - Uses Web Workers for parallel keypair generation
+- **GPU-accelerated matching** - Uses WebGPU to parallelize Base58 vanity matching when available
 - **Privacy First** - All computations run locally in your browser, no server communication
 - **Custom Prefix/Suffix** - Find addresses starting or ending with your desired Base58 characters
 - **Wallet + Program ID Targets** - Scan either wallet addresses or program IDs
@@ -45,12 +46,13 @@ npm run build
 - TypeScript
 - Vite
 - Web Workers
+- WebGPU
 - @noble/curves (ed25519)
 
 ## Notes
 
-- Current implementation uses CPU workers.
-- GPU acceleration for Solana ed25519 search can be added in a follow-up phase.
+- Runtime auto-benchmarks GPU hybrid mode vs CPU mode and picks the faster backend.
+- If WebGPU is unavailable, the app falls back to CPU-only search.
 
 ## License
 

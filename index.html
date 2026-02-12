@@ -8,11 +8,11 @@
 
     <meta
       name="description"
-      content="Generate Solana vanity wallet addresses and vanity program IDs directly in your browser with multi-core CPU acceleration."
+      content="Generate Solana vanity wallet addresses and vanity program IDs directly in your browser with WebGPU-accelerated matching and CPU fallback."
     />
     <meta
       name="keywords"
-      content="solana vanity address, solana vanity wallet, vanity program id, solana address generator"
+      content="solana vanity address, solana vanity wallet, vanity program id, solana address generator, webgpu solana"
     />
     <meta name="author" content="HODL Community" />
     <meta name="application-name" content="Vanity SOL GPU" />
@@ -34,7 +34,7 @@
     <meta property="og:title" content="Vanity SOL GPU | Solana Vanity Wallet & Program ID Generator" />
     <meta
       property="og:description"
-      content="Generate Solana vanity wallet addresses and program IDs in-browser with local-only key generation."
+      content="Generate Solana vanity wallet addresses and program IDs in-browser with WebGPU-accelerated matching and CPU fallback."
     />
     <meta property="og:image" content="https://hodl-community.github.io/vanity-sol-gpu/og-image.svg" />
     <meta property="og:image:secure_url" content="https://hodl-community.github.io/vanity-sol-gpu/og-image.svg" />
@@ -49,7 +49,7 @@
     <meta name="twitter:title" content="Vanity SOL GPU | Solana Vanity Wallet & Program ID Generator" />
     <meta
       name="twitter:description"
-      content="In-browser Solana vanity scanner for wallets and program IDs with local-only key generation."
+      content="In-browser Solana vanity scanner with WebGPU-accelerated matching and CPU fallback."
     />
     <meta name="twitter:image" content="https://hodl-community.github.io/vanity-sol-gpu/twitter-card.svg" />
     <meta name="twitter:image:alt" content="Vanity SOL GPU social card showing Solana vanity matching." />
@@ -63,7 +63,7 @@
             "name": "Vanity SOL GPU",
             "url": "https://hodl-community.github.io/vanity-sol-gpu/",
             "inLanguage": "en-US",
-            "description": "A privacy-first in-browser Solana vanity address generator."
+            "description": "A privacy-first in-browser Solana vanity address generator with GPU-accelerated matching."
           },
           {
             "@type": "SoftwareApplication",
@@ -73,7 +73,7 @@
             "url": "https://hodl-community.github.io/vanity-sol-gpu/",
             "image": "https://hodl-community.github.io/vanity-sol-gpu/og-image.svg",
             "inLanguage": "en-US",
-            "description": "Generate vanity Solana wallet addresses and program IDs with local-only key generation.",
+            "description": "Generate vanity Solana wallet addresses and program IDs with WebGPU-accelerated matching and local-only key generation.",
             "offers": {
               "@type": "Offer",
               "price": "0",
@@ -82,6 +82,7 @@
             "featureList": [
               "Wallet vanity address scanning",
               "Program ID vanity scanning",
+              "WebGPU-accelerated Base58 matching",
               "Local-only private key generation",
               "Solana keypair JSON export"
             ]

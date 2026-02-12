@@ -21,3 +21,7 @@
 - Mistake: I imported `@noble/curves/ed25519` without the `.js` extension, which failed TypeScript module resolution under the repo’s ESM/bundler settings.
 - Avoid: For `@noble/*` subpath imports in this setup, use explicit `.js` subpath imports from the start and run a build after dependency swaps.
 - Cleanup: Replace imports with `@noble/curves/ed25519.js` and rerun `npm run build` to confirm.
+
+- Mistake: I assumed typed-array buffers would satisfy `ArrayBuffer` transfer typings, but under strict TS they were inferred as `ArrayBufferLike`, causing compile errors in worker postMessage and `queue.writeBuffer`.
+- Avoid: Validate transfer/buffer boundaries early for worker/GPU code; normalize with explicit `Uint8Array#slice()` copies when strict buffer types are required.
+- Cleanup: Send typed arrays directly through worker messages (or copy into concrete `ArrayBuffer`), and pass a concrete copy into `queue.writeBuffer` before building.
