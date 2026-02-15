@@ -1,7 +1,7 @@
 import { bytesToHex, hexToBytes, nowMs } from '../utils/hex'
 import { type SearchTarget } from '../searchTarget'
 import { createWorkerPool, type WorkerPool } from '../worker/pool'
-import { createGpuMatcher, type GpuMatcher } from '../webgpu/gpuMatcher'
+import { createGpuMatcher, GPU_MATCHER_MAX_BATCH_SIZE, type GpuMatcher } from '../webgpu/gpuMatcher'
 import { keypairArrayFromPriv, secretKeyBase58FromPriv } from '../wallet/keypairJson'
 import { type PrivKey32 } from '../wallet/keys'
 import {
@@ -18,6 +18,8 @@ type RunState =
   | { status: 'idle' }
   | { status: 'running'; startedAtMs: number; generated: number; speed: number }
   | { status: 'found'; generated: number; time: number; foundPriv: PrivKey32; foundAddress: string }
+
+type GeneratedBatch = Awaited<ReturnType<WorkerPool['generate']>>
 
 const PREVIEW_LENGTH = 44
 let cachedBackend: Backend | null = null
@@ -310,6 +312,38 @@ export function initApp(root: HTMLDivElement) {
     }
   }
 
+  function getHybridTaskSplit(workerCount: number): { gpuTasks: number; cpuTasks: number } {
+    if (workerCount <= 1) return { gpuTasks: 1, cpuTasks: 0 }
+
+    const cpuTasks = Math.max(1, Math.floor(workerCount / 3))
+    const gpuTasks = Math.max(1, workerCount - cpuTasks)
+    return { gpuTasks, cpuTasks }
+  }
+
+  function getGpuBatchPerTask(gpuTasks: number): number {
+    const maxPerTask = Math.floor(GPU_MATCHER_MAX_BATCH_SIZE / Math.max(1, gpuTasks))
+    const aligned = Math.max(256, Math.floor(maxPerTask / 256) * 256)
+    return Math.max(256, Math.min(4096, aligned))
+  }
+
+  function combineGeneratedBatches(batches: GeneratedBatch[]): GeneratedBatch {
+    let totalChecked = 0
+    for (const batch of batches) totalChecked += batch.checked
+
+    const privKeys = new Uint8Array(new ArrayBuffer(totalChecked * 32))
+    const pubKeys = new Uint8Array(new ArrayBuffer(totalChecked * 32))
+
+    let writeOffset = 0
+    for (const batch of batches) {
+      const byteOffset = writeOffset * 32
+      privKeys.set(batch.privKeys, byteOffset)
+      pubKeys.set(batch.pubKeys, byteOffset)
+      writeOffset += batch.checked
+    }
+
+    return { checked: totalChecked, privKeys, pubKeys }
+  }
+
   async function benchmarkBackend(pool: WorkerPool): Promise<{ backend: Backend; gpuMatcher: GpuMatcher | null }> {
     if (cachedBackend === 'cpu') {
       return { backend: 'cpu', gpuMatcher: null }
@@ -324,25 +358,40 @@ export function initApp(root: HTMLDivElement) {
     }
 
     const BENCH_DURATION_MS = 1200
-    const BENCH_BATCH_SIZE = 1024
+    const CPU_BENCH_BATCH_SIZE = 1024
     const impossiblePrefix = 'zzzzzzzzzzzzzz'
     const impossibleSuffix = 'zzzzzzzzzz'
+    const { gpuTasks, cpuTasks } = getHybridTaskSplit(pool.workerCount)
+    const gpuBatchPerTask = getGpuBatchPerTask(gpuTasks)
 
     let gpuChecked = 0
     subtitleEl.textContent = 'Benchmarking GPU...'
     const gpuStart = nowMs()
 
     while (nowMs() - gpuStart < BENCH_DURATION_MS && !stopRequested) {
-      const batches = []
-      for (let i = 0; i < pool.workerCount; i++) {
-        batches.push(pool.generate(BENCH_BATCH_SIZE))
+      const generatedPromises = []
+      for (let i = 0; i < gpuTasks; i++) {
+        generatedPromises.push(pool.generate(gpuBatchPerTask))
       }
 
-      const generated = await Promise.all(batches)
+      const cpuPromises = []
+      for (let i = 0; i < cpuTasks; i++) {
+        cpuPromises.push(pool.search(impossiblePrefix, impossibleSuffix, CPU_BENCH_BATCH_SIZE, 'wallet', true))
+      }
 
-      for (const batch of generated) {
-        await gpuMatcher.findMatchIndex(batch.pubKeys, batch.checked, impossiblePrefix, impossibleSuffix, true)
-        gpuChecked += batch.checked
+      const [generated, cpuResults] = await Promise.all([
+        Promise.all(generatedPromises),
+        Promise.all(cpuPromises),
+      ])
+
+      const combined = combineGeneratedBatches(generated)
+      if (combined.checked > 0) {
+        await gpuMatcher.findMatchIndex(combined.pubKeys, combined.checked, impossiblePrefix, impossibleSuffix, true)
+        gpuChecked += combined.checked
+      }
+
+      for (const result of cpuResults) {
+        gpuChecked += result.checked
       }
     }
 
@@ -358,7 +407,7 @@ export function initApp(root: HTMLDivElement) {
     while (nowMs() - cpuStart < BENCH_DURATION_MS && !stopRequested) {
       const searches = []
       for (let i = 0; i < pool.workerCount; i++) {
-        searches.push(pool.search(impossiblePrefix, impossibleSuffix, BENCH_BATCH_SIZE, 'wallet', true))
+        searches.push(pool.search(impossiblePrefix, impossibleSuffix, CPU_BENCH_BATCH_SIZE, 'wallet', true))
       }
 
       const results = await Promise.all(searches)
@@ -378,12 +427,12 @@ export function initApp(root: HTMLDivElement) {
 
     if (winner === 'cpu') {
       gpuMatcher.destroy()
-      subtitleEl.textContent = `GPU: ${formatNumber(Math.round(gpuSpeed))}/s | CPU: ${formatNumber(Math.round(cpuSpeed))}/s → Using CPU`
+      subtitleEl.textContent = `HYBRID: ${formatNumber(Math.round(gpuSpeed))}/s | CPU: ${formatNumber(Math.round(cpuSpeed))}/s → Using CPU`
       await new Promise(resolve => setTimeout(resolve, 1200))
       return { backend: 'cpu', gpuMatcher: null }
     }
 
-    subtitleEl.textContent = `GPU: ${formatNumber(Math.round(gpuSpeed))}/s | CPU: ${formatNumber(Math.round(cpuSpeed))}/s → Using GPU`
+    subtitleEl.textContent = `HYBRID: ${formatNumber(Math.round(gpuSpeed))}/s | CPU: ${formatNumber(Math.round(cpuSpeed))}/s → Using HYBRID`
     await new Promise(resolve => setTimeout(resolve, 1200))
     return { backend: 'gpu', gpuMatcher }
   }
@@ -441,41 +490,56 @@ export function initApp(root: HTMLDivElement) {
     target: SearchTarget,
     caseSensitive: boolean
   ) {
-    const batchPerWorker = 1024
-    subtitleEl.textContent = `Running on GPU + CPU keygen (${pool.workerCount} workers)`
+    const { gpuTasks, cpuTasks } = getHybridTaskSplit(pool.workerCount)
+    const gpuBatchPerTask = getGpuBatchPerTask(gpuTasks)
+    const cpuBatchPerTask = 1024
+    subtitleEl.textContent = `Running hybrid (${gpuTasks} GPU-feed workers + ${cpuTasks} CPU workers)`
 
     let recentGenerated = 0
     let recentStartMs = nowMs()
 
     while (!stopRequested && runState.status === 'running') {
-      const generatedBatches = []
-      for (let i = 0; i < pool.workerCount; i++) {
-        generatedBatches.push(pool.generate(batchPerWorker))
+      const generatedPromises = []
+      for (let i = 0; i < gpuTasks; i++) {
+        generatedPromises.push(pool.generate(gpuBatchPerTask))
       }
 
-      const batches = await Promise.all(generatedBatches)
+      const cpuSearchPromises = []
+      for (let i = 0; i < cpuTasks; i++) {
+        cpuSearchPromises.push(pool.search(prefix, suffix, cpuBatchPerTask, target, caseSensitive))
+      }
+
+      const [batches, cpuResults] = await Promise.all([
+        Promise.all(generatedPromises),
+        Promise.all(cpuSearchPromises),
+      ])
+
       let totalChecked = 0
+      const combined = combineGeneratedBatches(batches)
+      totalChecked += combined.checked
 
-      for (const batch of batches) {
-        totalChecked += batch.checked
-
-        if (runState.status !== 'running') break
-
+      if (combined.checked > 0 && runState.status === 'running') {
         const matchIndex = await gpuMatcher.findMatchIndex(
-          batch.pubKeys,
-          batch.checked,
+          combined.pubKeys,
+          combined.checked,
           prefix,
           suffix,
           caseSensitive,
         )
 
-        if (matchIndex === null || runState.status !== 'running') continue
+        if (matchIndex !== null && runState.status === 'running') {
+          const privOffset = matchIndex * 32
+          const priv = combined.privKeys.subarray(privOffset, privOffset + 32)
+          const pub = combined.pubKeys.subarray(privOffset, privOffset + 32)
+          handleFound(bytesToHex(priv), bytesToBase58(pub), prefix, suffix, target, caseSensitive)
+        }
+      }
 
-        const privOffset = matchIndex * 32
-        const priv = batch.privKeys.subarray(privOffset, privOffset + 32)
-        const pub = batch.pubKeys.subarray(privOffset, privOffset + 32)
-
-        handleFound(bytesToHex(priv), bytesToBase58(pub), prefix, suffix, target, caseSensitive)
+      for (const result of cpuResults) {
+        totalChecked += result.checked
+        if (result.found && runState.status === 'running') {
+          handleFound(result.found.privHex, result.found.address, prefix, suffix, target, caseSensitive)
+        }
       }
 
       if (runState.status === 'running') {

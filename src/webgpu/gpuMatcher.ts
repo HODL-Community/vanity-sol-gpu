@@ -1,7 +1,7 @@
 import shaderSource from './base58Matcher.wgsl?raw'
 
 const MAX_MATCH_LEN = 44
-const MAX_BATCH_SIZE = 32768
+export const GPU_MATCHER_MAX_BATCH_SIZE = 32768
 const NO_MATCH = 0xffffffff
 const PARAM_U32_COUNT = 4 + MAX_MATCH_LEN + MAX_MATCH_LEN
 
@@ -38,7 +38,7 @@ export async function createGpuMatcher(): Promise<GpuMatcher> {
   })
 
   const pubKeysBuffer = device.createBuffer({
-    size: MAX_BATCH_SIZE * 32,
+    size: GPU_MATCHER_MAX_BATCH_SIZE * 32,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   })
 
@@ -78,12 +78,17 @@ export async function createGpuMatcher(): Promise<GpuMatcher> {
   ): Promise<number | null> {
     if (destroyed) throw new Error('GPU matcher was destroyed')
     if (count <= 0) return null
-    if (count > MAX_BATCH_SIZE) {
-      throw new Error(`Batch size ${count} exceeds MAX_BATCH_SIZE ${MAX_BATCH_SIZE}`)
+    if (count > GPU_MATCHER_MAX_BATCH_SIZE) {
+      throw new Error(`Batch size ${count} exceeds MAX_BATCH_SIZE ${GPU_MATCHER_MAX_BATCH_SIZE}`)
     }
 
-    const upload = pubKeys.slice(0, count * 32)
-    device.queue.writeBuffer(pubKeysBuffer, 0, upload)
+    const requiredBytes = count * 32
+    if (pubKeys.length < requiredBytes) {
+      throw new Error(`Pubkey buffer too small: got ${pubKeys.length}, need ${requiredBytes}`)
+    }
+
+    const upload = pubKeys.length === requiredBytes ? pubKeys : pubKeys.slice(0, requiredBytes)
+    device.queue.writeBuffer(pubKeysBuffer, 0, upload as unknown as ArrayBufferView<ArrayBuffer>)
 
     paramsData.fill(0)
     paramsData[0] = count

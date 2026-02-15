@@ -35,8 +35,8 @@ type BatchWorkerResult = {
 }
 
 function generateBatch(batchSize: number): { privKeys: Uint8Array; pubKeys: Uint8Array } {
-  const privKeys = new Uint8Array(batchSize * 32)
-  const pubKeys = new Uint8Array(batchSize * 32)
+  const privKeys = new Uint8Array(new ArrayBuffer(batchSize * 32))
+  const pubKeys = new Uint8Array(new ArrayBuffer(batchSize * 32))
 
   crypto.getRandomValues(privKeys)
 
@@ -65,7 +65,7 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
       pubKeys,
     }
 
-    self.postMessage(result)
+    self.postMessage(result, { transfer: [privKeys.buffer, pubKeys.buffer] })
     return
   }
 

@@ -6,6 +6,7 @@ A fast Solana vanity address generator that runs entirely in your browser.
 
 - **Multi-threaded** - Uses Web Workers for parallel keypair generation
 - **GPU-accelerated matching** - Uses WebGPU to parallelize Base58 vanity matching when available
+- **CPU + GPU hybrid mode** - Runs CPU search and GPU matching concurrently when the hybrid backend wins
 - **Privacy First** - All computations run locally in your browser, no server communication
 - **Custom Prefix/Suffix** - Find addresses starting or ending with your desired Base58 characters
 - **Wallet + Program ID Targets** - Scan either wallet addresses or program IDs
