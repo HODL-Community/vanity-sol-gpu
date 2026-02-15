@@ -219,6 +219,7 @@ export function initApp(root: HTMLDivElement) {
       <div>All computations run locally in your browser. For maximum security, disconnect from the internet before generating.</div>
       <div class="built-by">Built by <a href="https://x.com/snapss" target="_blank" rel="noopener">@snapss</a> & <a href="https://claude.ai" target="_blank" rel="noopener">Claude</a></div>
       <div class="open-source"><a href="https://github.com/HODL-Community/vanity-sol-gpu" target="_blank" rel="noopener">Open Source</a> on GitHub</div>
+      <div class="donate">Donate: <span class="donate-addr">6EhCF2jMxB3723MuZ5jUSFTuyLsjKFoQmQCap9ZBBqFJ</span><button class="copy-btn-small" id="copy-donate">Copy</button></div>
     </div>
   `
 
@@ -239,6 +240,7 @@ export function initApp(root: HTMLDivElement) {
   const pkText = root.querySelector<HTMLSpanElement>('#pk-text')!
   const copyAddr = root.querySelector<HTMLButtonElement>('#copy-addr')!
   const copyPk = root.querySelector<HTMLButtonElement>('#copy-pk')!
+  const copyDonate = root.querySelector<HTMLButtonElement>('#copy-donate')!
   const btnReveal = root.querySelector<HTMLButtonElement>('#btn-reveal')!
   const btnDownload = root.querySelector<HTMLButtonElement>('#btn-download')!
   const subtitleEl = root.querySelector<HTMLDivElement>('#subtitle')!
@@ -649,6 +651,10 @@ export function initApp(root: HTMLDivElement) {
   copyPk.addEventListener('click', () => {
     if (!lastFound || !pkText.textContent || pkText.textContent.includes('\u2022')) return
     void copyToClipboard(pkText.textContent, copyPk)
+  })
+
+  copyDonate.addEventListener('click', () => {
+    void copyToClipboard('6EhCF2jMxB3723MuZ5jUSFTuyLsjKFoQmQCap9ZBBqFJ', copyDonate)
   })
 
   btnDownload.addEventListener('click', () => {

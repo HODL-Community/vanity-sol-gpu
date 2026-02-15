@@ -547,6 +547,7 @@ input:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -554,6 +555,7 @@ input:disabled {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
+  word-break: break-all;
 }
 
 .copy-btn-small {
