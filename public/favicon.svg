@@ -10,9 +10,7 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <g transform="translate(8, 10)">
-    <path d="M8 3h39l-6 7H2l6-7z" fill="url(#sol)"/>
-    <path d="M2 18h39l-6 7H-4l6-7z" fill="url(#sol)"/>
-    <path d="M8 33h39l-6 7H2l6-7z" fill="url(#sol)"/>
-  </g>
+  <path d="M23 16h32l-7 8H16l7-8z" fill="url(#sol)"/>
+  <path d="M16 30h32l-7 8H9l7-8z" fill="url(#sol)"/>
+  <path d="M23 44h32l-7 8H16l7-8z" fill="url(#sol)"/>
 </svg>

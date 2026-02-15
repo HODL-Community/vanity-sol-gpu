@@ -125,9 +125,9 @@ export function initApp(root: HTMLDivElement) {
               <stop offset="100%" stop-color="#9945ff"/>
             </linearGradient>
           </defs>
-          <path d="M20 24H84L74 35H10L20 24Z" fill="url(#sol-glyph-gradient)"/>
-          <path d="M10 47H74L64 58H0L10 47Z" fill="url(#sol-glyph-gradient)"/>
-          <path d="M20 70H84L74 81H10L20 70Z" fill="url(#sol-glyph-gradient)"/>
+          <path d="M33 22H85L75 33H23L33 22Z" fill="url(#sol-glyph-gradient)"/>
+          <path d="M25 43H77L67 54H15L25 43Z" fill="url(#sol-glyph-gradient)"/>
+          <path d="M33 64H85L75 75H23L33 64Z" fill="url(#sol-glyph-gradient)"/>
         </svg>
       </div>
       <div class="title">Vanity SOL GPU</div>
